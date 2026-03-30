@@ -652,7 +652,7 @@ function renderSingleView() {
   for (let dow = 0; dow < 5; dow++) {
     for (const h of HOURS) {
       const d = data[dow][h];
-      if (d.dials >= minDials) {
+      if (d.dials >= Math.max(minDials, 10)) {
         slots.push({ dow, hour: h, rate: getRate(d.dials, d.connected), dials: d.dials, connected: d.connected });
       }
     }
