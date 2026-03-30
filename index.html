@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SDR Call Connect Rate Heatmap</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f1117;
+    color: #e1e4e8;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: #8b949e;
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .sdr-btn {
+    padding: 8px 16px;
+    border: 1px solid #30363d;
+    background: #161b22;
+    color: #c9d1d9;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  .sdr-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+  .sdr-btn.active {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    color: #fff;
+  }
+  .stats-bar {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 12px 20px;
+    min-width: 140px;
+  }
+  .stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-size: 24px; font-weight: 600; margin-top: 2px; }
+  .stat-value.rate { color: #58a6ff; }
+  .heatmap-container {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 24px;
+    overflow-x: auto;
+    margin-bottom: 24px;
+  }
+  .heatmap-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  th {
+    font-size: 12px;
+    font-weight: 500;
+    color: #8b949e;
+    padding: 8px 4px;
+    text-align: center;
+  }
+  th.hour-label {
+    text-align: right;
+    padding-right: 12px;
+    width: 80px;
+    white-space: nowrap;
+  }
+  td {
+    padding: 3px;
+    text-align: center;
+  }
+  .cell {
+    width: 100%;
+    height: 38px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: default;
+    position: relative;
+    transition: transform 0.1s;
+    min-width: 80px;
+  }
+  .cell:hover {
+    transform: scale(1.05);
+    z-index: 10;
+    box-shadow: 0 0 12px rgba(0,0,0,0.5);
+  }
+  .cell .rate-text { font-size: 12px; font-weight: 600; }
+  .cell .dial-count { font-size: 9px; opacity: 0.7; }
+  .tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1c2028;
+    border: 1px solid #444c56;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    pointer-events: none;
+  }
+  .cell:hover .tooltip { display: block; }
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .legend-bar {
+    display: flex;
+    height: 14px;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .legend-bar div { width: 30px; height: 100%; }
+  .best-times {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .best-times h3 { font-size: 15px; margin-bottom: 12px; }
+  .best-time-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #21262d;
+    font-size: 13px;
+  }
+  .best-time-row:last-child { border-bottom: none; }
+  .best-time-rank {
+    font-weight: 700;
+    font-size: 16px;
+    width: 28px;
+    text-align: center;
+  }
+  .best-time-slot { font-weight: 600; min-width: 160px; }
+  .best-time-bar {
+    height: 20px;
+    border-radius: 3px;
+    min-width: 4px;
+  }
+  .best-time-stats { color: #8b949e; font-size: 12px; }
+  .min-dials-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #8b949e;
+    margin-left: auto;
+  }
+  .min-dials-control input {
+    width: 60px;
+    padding: 4px 8px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #e1e4e8;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Call Connect Rate Heatmap</h1>
+<div class="subtitle">Prospect local time | 2025 - Q1 2026 | Data from HubSpot</div>
+
+<div class="controls">
+  <div id="sdr-buttons"></div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+    <button class="sdr-btn" id="compare-toggle" style="border-color:#da6829;color:#da6829;">Compare</button>
+    <div class="min-dials-control">
+      Min dials:
+      <input type="number" id="min-dials" value="1" min="1" max="100">
+    </div>
+  </div>
+</div>
+
+<!-- Compare selector (hidden by default) -->
+<div id="compare-bar" style="display:none;margin-bottom:24px;">
+  <div style="display:flex;gap:24px;align-items:center;">
+    <div>
+      <span style="font-size:12px;color:#8b949e;">Left:</span>
+      <select id="compare-left" style="padding:6px 12px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;font-size:13px;"></select>
+    </div>
+    <span style="color:#30363d;font-size:18px;">vs</span>
+    <div>
+      <span style="font-size:12px;color:#8b949e;">Right:</span>
+      <select id="compare-right" style="padding:6px 12px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#e1e4e8;font-size:13px;"></select>
+    </div>
+  </div>
+</div>
+
+<!-- Single view -->
+<div id="single-view">
+  <div class="stats-bar" id="stats-bar"></div>
+
+  <div class="best-times" id="best-times">
+    <h3>Best Call Windows (prospect local time)</h3>
+    <div id="best-times-list"></div>
+  </div>
+
+  <div class="heatmap-container">
+    <div class="heatmap-title">Connect Rate by Prospect Local Time</div>
+    <table id="heatmap-table"></table>
+    <div class="legend">
+      <span>Low</span>
+      <div class="legend-bar">
+        <div style="background:#1a1a2e"></div><div style="background:#1e2a4a"></div><div style="background:#1f3a5f"></div><div style="background:#1f4a7a"></div>
+        <div style="background:#1f5a95"></div><div style="background:#2070b0"></div><div style="background:#3090d0"></div><div style="background:#58a6ff"></div>
+      </div>
+      <span>High</span>
+      <span style="margin-left:16px;">Cell shows connect rate. Hover for details.</span>
+    </div>
+  </div>
+
+  <div class="heatmap-container">
+    <div class="heatmap-title">Dial Volume by Prospect Local Time</div>
+    <table id="volume-table"></table>
+    <div class="legend">
+      <span>Low</span>
+      <div class="legend-bar">
+        <div style="background:#1a1a2e"></div><div style="background:#1e2a4a"></div><div style="background:#1f3a5f"></div><div style="background:#1f4a7a"></div>
+        <div style="background:#1f5a95"></div><div style="background:#2070b0"></div><div style="background:#3090d0"></div><div style="background:#58a6ff"></div>
+      </div>
+      <span>High</span>
+    </div>
+  </div>
+</div>
+
+<!-- Compare view (hidden by default) -->
+<div id="compare-view" style="display:none;">
+  <div style="display:flex;gap:16px;margin-bottom:24px;">
+    <div class="stat" id="compare-stat-left"></div>
+    <div class="stat" id="compare-stat-right"></div>
+  </div>
+
+  <div style="display:flex;gap:16px;">
+    <div class="heatmap-container" style="flex:1;min-width:0;">
+      <div class="heatmap-title" id="compare-rate-title-left"></div>
+      <table id="compare-rate-left"></table>
+    </div>
+    <div class="heatmap-container" style="flex:1;min-width:0;">
+      <div class="heatmap-title" id="compare-rate-title-right"></div>
+      <table id="compare-rate-right"></table>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:16px;margin-top:16px;">
+    <div class="heatmap-container" style="flex:1;min-width:0;">
+      <div class="heatmap-title" id="compare-vol-title-left"></div>
+      <table id="compare-vol-left"></table>
+    </div>
+    <div class="heatmap-container" style="flex:1;min-width:0;">
+      <div class="heatmap-title" id="compare-vol-title-right"></div>
+      <table id="compare-vol-right"></table>
+    </div>
+  </div>
+
+  <div class="legend" style="margin-top:16px;">
+    <span>Low</span>
+    <div class="legend-bar">
+      <div style="background:#1a1a2e"></div><div style="background:#1e2a4a"></div><div style="background:#1f3a5f"></div><div style="background:#1f4a7a"></div>
+      <div style="background:#1f5a95"></div><div style="background:#2070b0"></div><div style="background:#3090d0"></div><div style="background:#58a6ff"></div>
+    </div>
+    <span>High</span>
+  </div>
+</div>
+
+<!-- Weekly Trend Chart -->
+<div class="heatmap-container" style="margin-top:24px;">
+  <div class="heatmap-title">Weekly Connect Rate Trend</div>
+  <div style="margin:8px 0 16px;display:flex;gap:16px;flex-wrap:wrap;" id="trend-legend"></div>
+  <canvas id="trend-chart" style="width:100%;height:650px;"></canvas>
+  <div id="trend-tooltip" style="display:none;position:fixed;background:#1c2028;border:1px solid #444c56;border-radius:6px;padding:10px 14px;font-size:12px;z-index:1000;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.4);"></div>
+</div>
+
+<script>
+const DATA = {"heatmap": {"Tyrese": {"3": {"14": {"dials": 55, "connected": 17}, "15": {"dials": 74, "connected": 21}, "10": {"dials": 49, "connected": 12}, "11": {"dials": 72, "connected": 11}, "13": {"dials": 37, "connected": 14}, "17": {"dials": 37, "connected": 7}, "18": {"dials": 3, "connected": 2}, "12": {"dials": 36, "connected": 10}, "16": {"dials": 112, "connected": 29}, "9": {"dials": 10, "connected": 2}, "8": {"dials": 1, "connected": 1}, "7": {"dials": 1, "connected": 0}}, "4": {"10": {"dials": 30, "connected": 8}, "16": {"dials": 110, "connected": 34}, "11": {"dials": 30, "connected": 12}, "13": {"dials": 35, "connected": 8}, "12": {"dials": 25, "connected": 5}, "15": {"dials": 60, "connected": 22}, "14": {"dials": 67, "connected": 23}, "9": {"dials": 10, "connected": 1}, "18": {"dials": 4, "connected": 1}, "17": {"dials": 26, "connected": 6}, "19": {"dials": 2, "connected": 0}}, "0": {"13": {"dials": 45, "connected": 17}, "14": {"dials": 49, "connected": 15}, "11": {"dials": 62, "connected": 12}, "12": {"dials": 65, "connected": 12}, "9": {"dials": 2, "connected": 1}, "16": {"dials": 83, "connected": 18}, "17": {"dials": 45, "connected": 6}, "15": {"dials": 61, "connected": 20}, "10": {"dials": 20, "connected": 4}, "18": {"dials": 1, "connected": 0}}, "1": {"10": {"dials": 68, "connected": 9}, "11": {"dials": 75, "connected": 17}, "14": {"dials": 57, "connected": 15}, "12": {"dials": 46, "connected": 17}, "13": {"dials": 57, "connected": 22}, "16": {"dials": 98, "connected": 36}, "17": {"dials": 25, "connected": 5}, "15": {"dials": 58, "connected": 23}, "18": {"dials": 3, "connected": 1}, "9": {"dials": 3, "connected": 1}}, "2": {"9": {"dials": 22, "connected": 10}, "10": {"dials": 42, "connected": 7}, "11": {"dials": 51, "connected": 7}, "15": {"dials": 95, "connected": 23}, "12": {"dials": 45, "connected": 14}, "13": {"dials": 42, "connected": 18}, "14": {"dials": 39, "connected": 10}, "16": {"dials": 74, "connected": 19}, "17": {"dials": 21, "connected": 5}, "18": {"dials": 1, "connected": 0}, "8": {"dials": 6, "connected": 1}}}, "Lina": {"1": {"15": {"dials": 59, "connected": 5}, "17": {"dials": 43, "connected": 4}, "18": {"dials": 16, "connected": 2}, "16": {"dials": 86, "connected": 11}, "13": {"dials": 33, "connected": 1}, "14": {"dials": 42, "connected": 6}, "12": {"dials": 33, "connected": 3}, "11": {"dials": 8, "connected": 1}, "10": {"dials": 2, "connected": 0}, "21": {"dials": 1, "connected": 1}, "9": {"dials": 1, "connected": 0}, "19": {"dials": 1, "connected": 0}, "20": {"dials": 1, "connected": 0}}, "0": {"15": {"dials": 46, "connected": 4}, "16": {"dials": 71, "connected": 6}, "14": {"dials": 22, "connected": 0}, "22": {"dials": 1, "connected": 0}, "17": {"dials": 27, "connected": 0}, "13": {"dials": 5, "connected": 0}, "11": {"dials": 1, "connected": 0}, "12": {"dials": 3, "connected": 0}, "18": {"dials": 2, "connected": 0}, "19": {"dials": 1, "connected": 0}, "21": {"dials": 1, "connected": 0}}, "2": {"18": {"dials": 13, "connected": 2}, "15": {"dials": 73, "connected": 10}, "16": {"dials": 100, "connected": 1}, "17": {"dials": 72, "connected": 4}, "14": {"dials": 65, "connected": 9}, "19": {"dials": 1, "connected": 0}, "12": {"dials": 35, "connected": 1}, "13": {"dials": 40, "connected": 7}, "11": {"dials": 13, "connected": 2}, "9": {"dials": 1, "connected": 0}, "10": {"dials": 1, "connected": 0}, "20": {"dials": 1, "connected": 0}}, "3": {"14": {"dials": 48, "connected": 8}, "16": {"dials": 83, "connected": 10}, "13": {"dials": 40, "connected": 5}, "15": {"dials": 92, "connected": 9}, "17": {"dials": 33, "connected": 2}, "22": {"dials": 1, "connected": 0}, "18": {"dials": 17, "connected": 0}, "19": {"dials": 2, "connected": 0}, "12": {"dials": 19, "connected": 0}, "11": {"dials": 17, "connected": 1}, "6": {"dials": 1, "connected": 0}, "9": {"dials": 2, "connected": 0}}, "4": {"2": {"dials": 1, "connected": 0}, "13": {"dials": 42, "connected": 4}, "14": {"dials": 46, "connected": 8}, "15": {"dials": 32, "connected": 4}, "16": {"dials": 51, "connected": 0}, "12": {"dials": 24, "connected": 4}, "11": {"dials": 29, "connected": 2}, "17": {"dials": 18, "connected": 1}, "18": {"dials": 4, "connected": 0}, "10": {"dials": 4, "connected": 0}, "9": {"dials": 1, "connected": 0}, "8": {"dials": 1, "connected": 0}, "19": {"dials": 1, "connected": 0}, "21": {"dials": 1, "connected": 1}}}, "Ricky": {"2": {"13": {"dials": 25, "connected": 4}, "14": {"dials": 31, "connected": 4}, "15": {"dials": 75, "connected": 11}, "16": {"dials": 132, "connected": 11}, "17": {"dials": 19, "connected": 0}, "19": {"dials": 1, "connected": 1}, "12": {"dials": 7, "connected": 2}, "10": {"dials": 7, "connected": 0}, "11": {"dials": 8, "connected": 1}, "8": {"dials": 2, "connected": 0}, "5": {"dials": 3, "connected": 0}, "0": {"dials": 2, "connected": 0}}, "4": {"14": {"dials": 41, "connected": 5}, "15": {"dials": 39, "connected": 3}, "16": {"dials": 25, "connected": 1}, "17": {"dials": 1, "connected": 1}, "12": {"dials": 37, "connected": 2}, "13": {"dials": 44, "connected": 4}, "11": {"dials": 2, "connected": 1}, "10": {"dials": 1, "connected": 0}, "7": {"dials": 1, "connected": 0}}, "1": {"11": {"dials": 6, "connected": 0}, "12": {"dials": 14, "connected": 1}, "13": {"dials": 21, "connected": 0}, "14": {"dials": 83, "connected": 5}, "15": {"dials": 123, "connected": 12}, "16": {"dials": 91, "connected": 7}, "18": {"dials": 4, "connected": 1}, "21": {"dials": 3, "connected": 0}, "17": {"dials": 1, "connected": 0}}, "3": {"13": {"dials": 25, "connected": 0}, "14": {"dials": 48, "connected": 7}, "15": {"dials": 85, "connected": 8}, "16": {"dials": 77, "connected": 4}, "17": {"dials": 4, "connected": 0}, "12": {"dials": 9, "connected": 2}, "0": {"dials": 5, "connected": 0}, "6": {"dials": 1, "connected": 0}, "20": {"dials": 1, "connected": 1}}, "0": {"15": {"dials": 40, "connected": 2}, "16": {"dials": 58, "connected": 4}, "17": {"dials": 3, "connected": 0}, "14": {"dials": 18, "connected": 3}, "11": {"dials": 3, "connected": 1}, "10": {"dials": 2, "connected": 0}, "13": {"dials": 1, "connected": 0}}, "5": {"1": {"dials": 1, "connected": 0}}}, "James": {"2": {"15": {"dials": 70, "connected": 9}, "14": {"dials": 15, "connected": 3}, "16": {"dials": 151, "connected": 13}, "18": {"dials": 6, "connected": 0}, "17": {"dials": 31, "connected": 3}, "19": {"dials": 4, "connected": 0}, "21": {"dials": 1, "connected": 0}, "10": {"dials": 2, "connected": 0}, "11": {"dials": 2, "connected": 1}, "12": {"dials": 2, "connected": 2}, "3": {"dials": 1, "connected": 0}, "20": {"dials": 1, "connected": 1}, "7": {"dials": 1, "connected": 0}, "9": {"dials": 1, "connected": 1}}, "3": {"16": {"dials": 133, "connected": 18}, "15": {"dials": 61, "connected": 11}, "13": {"dials": 7, "connected": 2}, "14": {"dials": 6, "connected": 2}, "2": {"dials": 1, "connected": 0}, "17": {"dials": 38, "connected": 6}, "19": {"dials": 4, "connected": 0}, "18": {"dials": 2, "connected": 1}, "11": {"dials": 8, "connected": 0}}, "0": {"15": {"dials": 61, "connected": 9}, "14": {"dials": 7, "connected": 2}, "16": {"dials": 123, "connected": 15}, "17": {"dials": 20, "connected": 4}, "18": {"dials": 5, "connected": 1}}, "1": {"14": {"dials": 5, "connected": 0}, "15": {"dials": 47, "connected": 9}, "16": {"dials": 114, "connected": 14}, "17": {"dials": 23, "connected": 4}, "9": {"dials": 1, "connected": 0}, "19": {"dials": 3, "connected": 0}, "11": {"dials": 1, "connected": 1}}, "4": {"15": {"dials": 14, "connected": 0}, "19": {"dials": 1, "connected": 0}, "17": {"dials": 6, "connected": 2}, "18": {"dials": 1, "connected": 1}, "16": {"dials": 6, "connected": 5}, "14": {"dials": 6, "connected": 0}, "12": {"dials": 8, "connected": 2}, "13": {"dials": 3, "connected": 0}, "11": {"dials": 4, "connected": 1}, "8": {"dials": 1, "connected": 0}, "9": {"dials": 2, "connected": 0}, "10": {"dials": 1, "connected": 1}}}, "Emmanuel": {"0": {"11": {"dials": 114, "connected": 12}, "9": {"dials": 45, "connected": 8}, "10": {"dials": 86, "connected": 14}, "12": {"dials": 91, "connected": 12}, "13": {"dials": 111, "connected": 20}, "14": {"dials": 71, "connected": 15}, "15": {"dials": 56, "connected": 11}, "16": {"dials": 55, "connected": 7}, "17": {"dials": 9, "connected": 1}, "7": {"dials": 5, "connected": 1}, "6": {"dials": 2, "connected": 0}, "18": {"dials": 2, "connected": 0}, "8": {"dials": 12, "connected": 1}, "19": {"dials": 2, "connected": 0}, "2": {"dials": 1, "connected": 0}, "4": {"dials": 1, "connected": 0}}, "1": {"11": {"dials": 90, "connected": 6}, "9": {"dials": 21, "connected": 5}, "13": {"dials": 62, "connected": 21}, "12": {"dials": 90, "connected": 6}, "10": {"dials": 50, "connected": 7}, "14": {"dials": 51, "connected": 6}, "7": {"dials": 6, "connected": 0}, "8": {"dials": 21, "connected": 6}, "5": {"dials": 1, "connected": 0}, "15": {"dials": 11, "connected": 4}, "19": {"dials": 1, "connected": 1}, "6": {"dials": 1, "connected": 0}, "17": {"dials": 6, "connected": 0}, "16": {"dials": 11, "connected": 5}}, "2": {"11": {"dials": 67, "connected": 13}, "12": {"dials": 92, "connected": 16}, "13": {"dials": 116, "connected": 23}, "10": {"dials": 44, "connected": 8}, "14": {"dials": 85, "connected": 9}, "7": {"dials": 4, "connected": 0}, "17": {"dials": 9, "connected": 1}, "18": {"dials": 4, "connected": 0}, "19": {"dials": 1, "connected": 1}, "16": {"dials": 38, "connected": 6}, "9": {"dials": 43, "connected": 3}, "15": {"dials": 59, "connected": 7}, "22": {"dials": 1, "connected": 0}, "23": {"dials": 1, "connected": 0}, "8": {"dials": 5, "connected": 0}, "6": {"dials": 2, "connected": 0}}, "3": {"11": {"dials": 125, "connected": 14}, "10": {"dials": 66, "connected": 8}, "9": {"dials": 21, "connected": 2}, "12": {"dials": 94, "connected": 13}, "14": {"dials": 45, "connected": 5}, "2": {"dials": 1, "connected": 0}, "8": {"dials": 8, "connected": 0}, "13": {"dials": 64, "connected": 11}, "15": {"dials": 29, "connected": 6}, "7": {"dials": 1, "connected": 0}, "6": {"dials": 1, "connected": 0}, "18": {"dials": 2, "connected": 0}, "22": {"dials": 1, "connected": 0}, "16": {"dials": 16, "connected": 3}, "17": {"dials": 6, "connected": 0}}, "4": {"12": {"dials": 62, "connected": 8}, "11": {"dials": 66, "connected": 12}, "9": {"dials": 31, "connected": 4}, "10": {"dials": 54, "connected": 10}, "13": {"dials": 43, "connected": 9}, "8": {"dials": 12, "connected": 1}, "16": {"dials": 32, "connected": 4}, "14": {"dials": 65, "connected": 11}, "15": {"dials": 38, "connected": 8}, "18": {"dials": 4, "connected": 1}, "7": {"dials": 1, "connected": 0}, "19": {"dials": 2, "connected": 0}, "22": {"dials": 1, "connected": 0}, "0": {"dials": 1, "connected": 0}, "17": {"dials": 4, "connected": 0}}, "6": {"18": {"dials": 1, "connected": 0}}}, "All SDRs": {"3": {"14": {"dials": 202, "connected": 39}, "15": {"dials": 341, "connected": 55}, "10": {"dials": 115, "connected": 20}, "11": {"dials": 222, "connected": 26}, "13": {"dials": 173, "connected": 32}, "17": {"dials": 118, "connected": 15}, "18": {"dials": 24, "connected": 3}, "12": {"dials": 158, "connected": 25}, "16": {"dials": 421, "connected": 64}, "9": {"dials": 33, "connected": 4}, "8": {"dials": 9, "connected": 1}, "7": {"dials": 2, "connected": 0}, "22": {"dials": 2, "connected": 0}, "19": {"dials": 6, "connected": 0}, "6": {"dials": 3, "connected": 0}, "0": {"dials": 5, "connected": 0}, "20": {"dials": 1, "connected": 1}, "2": {"dials": 2, "connected": 0}}, "4": {"10": {"dials": 90, "connected": 19}, "16": {"dials": 224, "connected": 44}, "11": {"dials": 131, "connected": 28}, "13": {"dials": 167, "connected": 25}, "12": {"dials": 156, "connected": 21}, "15": {"dials": 183, "connected": 37}, "14": {"dials": 225, "connected": 47}, "9": {"dials": 44, "connected": 5}, "18": {"dials": 13, "connected": 3}, "17": {"dials": 55, "connected": 10}, "19": {"dials": 6, "connected": 0}, "2": {"dials": 1, "connected": 0}, "8": {"dials": 14, "connected": 1}, "21": {"dials": 1, "connected": 1}, "7": {"dials": 2, "connected": 0}, "22": {"dials": 1, "connected": 0}, "0": {"dials": 1, "connected": 0}}, "0": {"13": {"dials": 162, "connected": 37}, "14": {"dials": 167, "connected": 35}, "11": {"dials": 180, "connected": 25}, "12": {"dials": 159, "connected": 24}, "9": {"dials": 47, "connected": 9}, "16": {"dials": 390, "connected": 50}, "17": {"dials": 104, "connected": 11}, "15": {"dials": 264, "connected": 46}, "10": {"dials": 108, "connected": 18}, "18": {"dials": 10, "connected": 1}, "22": {"dials": 1, "connected": 0}, "19": {"dials": 3, "connected": 0}, "21": {"dials": 1, "connected": 0}, "7": {"dials": 5, "connected": 1}, "6": {"dials": 2, "connected": 0}, "8": {"dials": 12, "connected": 1}, "2": {"dials": 1, "connected": 0}, "4": {"dials": 1, "connected": 0}}, "1": {"10": {"dials": 120, "connected": 16}, "11": {"dials": 180, "connected": 25}, "14": {"dials": 238, "connected": 32}, "12": {"dials": 183, "connected": 27}, "13": {"dials": 173, "connected": 44}, "16": {"dials": 400, "connected": 73}, "17": {"dials": 98, "connected": 13}, "15": {"dials": 298, "connected": 53}, "18": {"dials": 23, "connected": 4}, "9": {"dials": 26, "connected": 6}, "21": {"dials": 4, "connected": 1}, "19": {"dials": 5, "connected": 1}, "20": {"dials": 1, "connected": 0}, "7": {"dials": 6, "connected": 0}, "8": {"dials": 21, "connected": 6}, "5": {"dials": 1, "connected": 0}, "6": {"dials": 1, "connected": 0}}, "2": {"9": {"dials": 67, "connected": 14}, "10": {"dials": 96, "connected": 15}, "11": {"dials": 141, "connected": 24}, "15": {"dials": 372, "connected": 60}, "12": {"dials": 181, "connected": 35}, "13": {"dials": 223, "connected": 52}, "14": {"dials": 235, "connected": 35}, "16": {"dials": 495, "connected": 50}, "17": {"dials": 152, "connected": 13}, "18": {"dials": 24, "connected": 2}, "8": {"dials": 13, "connected": 1}, "19": {"dials": 7, "connected": 2}, "20": {"dials": 2, "connected": 1}, "5": {"dials": 3, "connected": 0}, "0": {"dials": 2, "connected": 0}, "21": {"dials": 1, "connected": 0}, "3": {"dials": 1, "connected": 0}, "7": {"dials": 5, "connected": 0}, "22": {"dials": 1, "connected": 0}, "23": {"dials": 1, "connected": 0}, "6": {"dials": 2, "connected": 0}}, "5": {"1": {"dials": 1, "connected": 0}}, "6": {"18": {"dials": 1, "connected": 0}}}}, "sdr_stats": {"Lina": {"total": 1594, "connected": 147, "rate": 9.2}, "Tyrese": {"total": 2315, "connected": 621, "rate": 26.8}, "James": {"total": 1033, "connected": 148, "rate": 14.3}, "Emmanuel": {"total": 2712, "connected": 386, "rate": 14.2}, "Ricky": {"total": 1248, "connected": 110, "rate": 8.8}, "All SDRs": {"total": 8902, "connected": 1412, "rate": 15.9}}};
+
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const HOURS = Array.from({length: 15}, (_, i) => i + 6);
+const SDR_LIST = ['All SDRs', 'Emmanuel', 'Tyrese', 'James', 'Lina', 'Ricky'];
+
+let currentSDR = 'All SDRs';
+let compareMode = false;
+let compareLeft = 'Tyrese';
+let compareRight = 'Ricky';
+let minDials = 1;
+
+function getRate(dials, connected) {
+  if (dials === 0) return 0;
+  return (connected / dials) * 100;
+}
+
+function rateColor(rate, dials) {
+  if (dials < minDials) return '#12151a';
+  if (rate <= 0) return '#12151a';
+  const intensity = Math.min(rate / 30, 1);
+  const r = Math.round(31 + intensity * 57);
+  const g = Math.round(37 + intensity * 129);
+  const b = Math.round(48 + intensity * 207);
+  return `rgb(${r},${g},${b})`;
+}
+
+function rateTextColor(rate, dials) {
+  if (dials < minDials) return '#30363d';
+  if (rate >= 20) return '#fff';
+  return '#e1e4e8';
+}
+
+function volumeColor(dials, maxDials) {
+  if (dials === 0) return '#12151a';
+  const intensity = Math.min(dials / maxDials, 1);
+  const r = Math.round(31 + intensity * 57);
+  const g = Math.round(37 + intensity * 129);
+  const b = Math.round(48 + intensity * 207);
+  return `rgb(${r},${g},${b})`;
+}
+
+function formatHour(h) {
+  if (h === 0) return '12 AM';
+  if (h < 12) return h + ' AM';
+  if (h === 12) return '12 PM';
+  return (h - 12) + ' PM';
+}
+
+function getData(sdr) {
+  const hm = DATA.heatmap[sdr] || {};
+  const result = {};
+  for (let dow = 0; dow < 5; dow++) {
+    result[dow] = {};
+    for (const h of HOURS) {
+      const dayData = hm[String(dow)] || {};
+      const hourData = dayData[String(h)] || {dials: 0, connected: 0};
+      result[dow][h] = hourData;
+    }
+  }
+  return result;
+}
+
+function statHTML(sdr) {
+  const s = DATA.sdr_stats[sdr] || {};
+  return `<div style="flex:1;"><div style="font-size:15px;font-weight:600;margin-bottom:8px;">${sdr}</div>
+    <span style="color:#8b949e;font-size:12px;">${(s.total||0).toLocaleString()} dials</span>
+    <span style="margin:0 8px;color:#30363d;">|</span>
+    <span style="color:#8b949e;font-size:12px;">${(s.connected||0).toLocaleString()} connected</span>
+    <span style="margin:0 8px;color:#30363d;">|</span>
+    <span style="color:#58a6ff;font-size:14px;font-weight:600;">${s.rate||0}%</span></div>`;
+}
+
+function buildRateTable(sdr) {
+  const data = getData(sdr);
+  let html = '<tr><th class="hour-label">Hour</th>';
+  DAY_SHORT.forEach(d => html += `<th>${d}</th>`);
+  html += '</tr>';
+  for (const h of HOURS) {
+    html += `<tr><th class="hour-label">${formatHour(h)}</th>`;
+    for (let dow = 0; dow < 5; dow++) {
+      const d = data[dow][h];
+      const rate = getRate(d.dials, d.connected);
+      const bg = rateColor(rate, d.dials);
+      const fg = rateTextColor(rate, d.dials);
+      const rateText = d.dials >= minDials ? rate.toFixed(0) + '%' : (d.dials > 0 ? '...' : '');
+      html += `<td><div class="cell" style="background:${bg};color:${fg}">
+        <div><div class="rate-text">${rateText}</div>${d.dials >= minDials ? `<div class="dial-count">${d.dials} dials</div>` : ''}</div>
+        <div class="tooltip">${DAYS[dow]} ${formatHour(h)}<br>${d.connected} connected / ${d.dials} dials<br>Rate: ${d.dials > 0 ? rate.toFixed(1) : 0}%</div>
+      </div></td>`;
+    }
+    html += '</tr>';
+  }
+  return html;
+}
+
+function buildVolumeTable(sdr) {
+  const data = getData(sdr);
+  let maxDials = 0;
+  for (let dow = 0; dow < 5; dow++) {
+    for (const h of HOURS) maxDials = Math.max(maxDials, data[dow][h].dials);
+  }
+  let html = '<tr><th class="hour-label">Hour</th>';
+  DAY_SHORT.forEach(d => html += `<th>${d}</th>`);
+  html += '</tr>';
+  for (const h of HOURS) {
+    html += `<tr><th class="hour-label">${formatHour(h)}</th>`;
+    for (let dow = 0; dow < 5; dow++) {
+      const d = data[dow][h];
+      const bg = volumeColor(d.dials, maxDials);
+      const fg = d.dials > maxDials * 0.5 ? '#fff' : (d.dials > 0 ? '#8b949e' : '#30363d');
+      html += `<td><div class="cell" style="background:${bg};color:${fg}">
+        <div><div class="rate-text">${d.dials || ''}</div></div>
+        <div class="tooltip">${DAYS[dow]} ${formatHour(h)}<br>${d.dials} dials, ${d.connected} connected</div>
+      </div></td>`;
+    }
+    html += '</tr>';
+  }
+  return html;
+}
+
+function renderButtons() {
+  const container = document.getElementById('sdr-buttons');
+  container.innerHTML = '';
+  SDR_LIST.forEach(sdr => {
+    if (!DATA.sdr_stats[sdr]) return;
+    const btn = document.createElement('button');
+    btn.className = 'sdr-btn' + (!compareMode && sdr === currentSDR ? ' active' : '');
+    btn.textContent = sdr;
+    btn.onclick = () => {
+      if (compareMode) return;
+      currentSDR = sdr;
+      render();
+
+const TREND = {"weeks": ["2025-01-27", "2025-02-03", "2025-02-10", "2025-02-17", "2025-02-24", "2025-03-03", "2025-03-10", "2025-03-17", "2025-03-31", "2025-04-07", "2025-04-14", "2025-04-21", "2025-04-28", "2025-05-05", "2025-05-12", "2025-05-19", "2025-05-26", "2025-06-02", "2025-06-09", "2025-06-16", "2025-06-23", "2025-06-30", "2025-07-07", "2025-07-14", "2025-07-21", "2025-07-28", "2025-08-04", "2025-08-11", "2025-08-18", "2025-08-25", "2025-09-01", "2025-09-08", "2025-09-15", "2025-09-22", "2025-09-29", "2025-10-06", "2025-10-13", "2025-10-20", "2025-10-27", "2025-11-03", "2025-11-10", "2025-11-17", "2025-11-24", "2025-12-01", "2025-12-08", "2025-12-15", "2025-12-22", "2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02", "2026-02-09", "2026-02-16", "2026-02-23", "2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"], "sdrs": {"Emmanuel": [{"week": "2025-01-27", "dials": 118, "connected": 14, "rate": 11.9}, {"week": "2025-02-03", "dials": 82, "connected": 14, "rate": 17.1}, {"week": "2025-02-10", "dials": 16, "connected": 6, "rate": 37.5}, {"week": "2025-02-17", "dials": 71, "connected": 8, "rate": 11.3}, {"week": "2025-02-24", "dials": 149, "connected": 25, "rate": 16.8}, {"week": "2025-03-03", "dials": 38, "connected": 17, "rate": 44.7}, {"week": "2025-03-10", "dials": 146, "connected": 26, "rate": 17.8}, {"week": "2025-03-17", "dials": 10, "connected": 1, "rate": 10.0}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 112, "connected": 9, "rate": 8.0}, {"week": "2025-04-14", "dials": 152, "connected": 15, "rate": 9.9}, {"week": "2025-04-21", "dials": 103, "connected": 12, "rate": 11.7}, {"week": "2025-04-28", "dials": 5, "connected": 0, "rate": 0.0}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 173, "connected": 8, "rate": 4.6}, {"week": "2025-05-19", "dials": 122, "connected": 14, "rate": 11.5}, {"week": "2025-05-26", "dials": 76, "connected": 12, "rate": 15.8}, {"week": "2025-06-02", "dials": 105, "connected": 9, "rate": 8.6}, {"week": "2025-06-09", "dials": 228, "connected": 32, "rate": 14.0}, {"week": "2025-06-16", "dials": 51, "connected": 4, "rate": 7.8}, {"week": "2025-06-23", "dials": 87, "connected": 14, "rate": 16.1}, {"week": "2025-06-30", "dials": 64, "connected": 7, "rate": 10.9}, {"week": "2025-07-07", "dials": 44, "connected": 5, "rate": 11.4}, {"week": "2025-07-14", "dials": 75, "connected": 9, "rate": 12.0}, {"week": "2025-07-21", "dials": 148, "connected": 12, "rate": 8.1}, {"week": "2025-07-28", "dials": 93, "connected": 16, "rate": 17.2}, {"week": "2025-08-04", "dials": 24, "connected": 10, "rate": 41.7}, {"week": "2025-08-11", "dials": 163, "connected": 23, "rate": 14.1}, {"week": "2025-08-18", "dials": 121, "connected": 26, "rate": 21.5}, {"week": "2025-08-25", "dials": 80, "connected": 21, "rate": 26.2}, {"week": "2025-09-01", "dials": 56, "connected": 17, "rate": 30.4}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Tyrese": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 3, "connected": 3, "rate": 100.0}, {"week": "2025-09-22", "dials": 6, "connected": 1, "rate": 16.7}, {"week": "2025-09-29", "dials": 40, "connected": 18, "rate": 45.0}, {"week": "2025-10-06", "dials": 107, "connected": 26, "rate": 24.3}, {"week": "2025-10-13", "dials": 118, "connected": 35, "rate": 29.7}, {"week": "2025-10-20", "dials": 80, "connected": 17, "rate": 21.2}, {"week": "2025-10-27", "dials": 64, "connected": 24, "rate": 37.5}, {"week": "2025-11-03", "dials": 86, "connected": 30, "rate": 34.9}, {"week": "2025-11-10", "dials": 116, "connected": 41, "rate": 35.3}, {"week": "2025-11-17", "dials": 137, "connected": 40, "rate": 29.2}, {"week": "2025-11-24", "dials": 114, "connected": 32, "rate": 28.1}, {"week": "2025-12-01", "dials": 71, "connected": 7, "rate": 9.9}, {"week": "2025-12-08", "dials": 110, "connected": 33, "rate": 30.0}, {"week": "2025-12-15", "dials": 57, "connected": 13, "rate": 22.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 72, "connected": 15, "rate": 20.8}, {"week": "2026-01-12", "dials": 12, "connected": 6, "rate": 50.0}, {"week": "2026-01-19", "dials": 42, "connected": 11, "rate": 26.2}, {"week": "2026-01-26", "dials": 185, "connected": 60, "rate": 32.4}, {"week": "2026-02-02", "dials": 153, "connected": 45, "rate": 29.4}, {"week": "2026-02-09", "dials": 200, "connected": 39, "rate": 19.5}, {"week": "2026-02-16", "dials": 98, "connected": 18, "rate": 18.4}, {"week": "2026-02-23", "dials": 75, "connected": 22, "rate": 29.3}, {"week": "2026-03-02", "dials": 137, "connected": 35, "rate": 25.5}, {"week": "2026-03-09", "dials": 102, "connected": 23, "rate": 22.5}, {"week": "2026-03-16", "dials": 82, "connected": 20, "rate": 24.4}, {"week": "2026-03-23", "dials": 48, "connected": 7, "rate": 14.6}], "James": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 16, "connected": 4, "rate": 25.0}, {"week": "2025-02-17", "dials": 11, "connected": 2, "rate": 18.2}, {"week": "2025-02-24", "dials": 16, "connected": 3, "rate": 18.8}, {"week": "2025-03-03", "dials": 64, "connected": 18, "rate": 28.1}, {"week": "2025-03-10", "dials": 53, "connected": 10, "rate": 18.9}, {"week": "2025-03-17", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-03-31", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-04-07", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-04-14", "dials": 19, "connected": 6, "rate": 31.6}, {"week": "2025-04-21", "dials": 103, "connected": 11, "rate": 10.7}, {"week": "2025-04-28", "dials": 96, "connected": 13, "rate": 13.5}, {"week": "2025-05-05", "dials": 91, "connected": 11, "rate": 12.1}, {"week": "2025-05-12", "dials": 52, "connected": 3, "rate": 5.8}, {"week": "2025-05-19", "dials": 90, "connected": 15, "rate": 16.7}, {"week": "2025-05-26", "dials": 57, "connected": 4, "rate": 7.0}, {"week": "2025-06-02", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-06-09", "dials": 32, "connected": 4, "rate": 12.5}, {"week": "2025-06-16", "dials": 54, "connected": 1, "rate": 1.9}, {"week": "2025-06-23", "dials": 58, "connected": 8, "rate": 13.8}, {"week": "2025-06-30", "dials": 43, "connected": 10, "rate": 23.3}, {"week": "2025-07-07", "dials": 18, "connected": 4, "rate": 22.2}, {"week": "2025-07-14", "dials": 11, "connected": 0, "rate": 0.0}, {"week": "2025-07-21", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 10, "connected": 2, "rate": 20.0}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-10-13", "dials": 4, "connected": 0, "rate": 0.0}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 5, "connected": 1, "rate": 20.0}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 3, "connected": 1, "rate": 33.3}, {"week": "2025-12-08", "dials": 6, "connected": 3, "rate": 50.0}, {"week": "2025-12-15", "dials": 37, "connected": 6, "rate": 16.2}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Lina": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 10, "connected": 0, "rate": 0.0}, {"week": "2025-08-04", "dials": 19, "connected": 2, "rate": 10.5}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 106, "connected": 6, "rate": 5.7}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 31, "connected": 3, "rate": 9.7}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 17, "connected": 4, "rate": 23.5}, {"week": "2025-09-29", "dials": 9, "connected": 2, "rate": 22.2}, {"week": "2025-10-06", "dials": 17, "connected": 2, "rate": 11.8}, {"week": "2025-10-13", "dials": 27, "connected": 5, "rate": 18.5}, {"week": "2025-10-20", "dials": 60, "connected": 7, "rate": 11.7}, {"week": "2025-10-27", "dials": 24, "connected": 3, "rate": 12.5}, {"week": "2025-11-03", "dials": 51, "connected": 9, "rate": 17.6}, {"week": "2025-11-10", "dials": 47, "connected": 5, "rate": 10.6}, {"week": "2025-11-17", "dials": 60, "connected": 6, "rate": 10.0}, {"week": "2025-11-24", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-12-01", "dials": 13, "connected": 1, "rate": 7.7}, {"week": "2025-12-08", "dials": 77, "connected": 10, "rate": 13.0}, {"week": "2025-12-15", "dials": 17, "connected": 1, "rate": 5.9}, {"week": "2025-12-22", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 37, "connected": 5, "rate": 13.5}, {"week": "2026-01-26", "dials": 50, "connected": 4, "rate": 8.0}, {"week": "2026-02-02", "dials": 70, "connected": 6, "rate": 8.6}, {"week": "2026-02-09", "dials": 111, "connected": 11, "rate": 9.9}, {"week": "2026-02-16", "dials": 141, "connected": 9, "rate": 6.4}, {"week": "2026-02-23", "dials": 133, "connected": 10, "rate": 7.5}, {"week": "2026-03-02", "dials": 99, "connected": 9, "rate": 9.1}, {"week": "2026-03-09", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-16", "dials": 108, "connected": 8, "rate": 7.4}, {"week": "2026-03-23", "dials": 123, "connected": 12, "rate": 9.8}], "Ricky": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-11-17", "dials": 21, "connected": 5, "rate": 23.8}, {"week": "2025-11-24", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-12-01", "dials": 34, "connected": 7, "rate": 20.6}, {"week": "2025-12-08", "dials": 144, "connected": 7, "rate": 4.9}, {"week": "2025-12-15", "dials": 62, "connected": 3, "rate": 4.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 59, "connected": 0, "rate": 0.0}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 27, "connected": 2, "rate": 7.4}, {"week": "2026-01-26", "dials": 70, "connected": 12, "rate": 17.1}, {"week": "2026-02-02", "dials": 76, "connected": 6, "rate": 7.9}, {"week": "2026-02-09", "dials": 97, "connected": 3, "rate": 3.1}, {"week": "2026-02-16", "dials": 134, "connected": 13, "rate": 9.7}, {"week": "2026-02-23", "dials": 69, "connected": 8, "rate": 11.6}, {"week": "2026-03-02", "dials": 114, "connected": 15, "rate": 13.2}, {"week": "2026-03-09", "dials": 123, "connected": 12, "rate": 9.8}, {"week": "2026-03-16", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-23", "dials": 69, "connected": 6, "rate": 8.7}]}};
+
+const SDR_COLORS = {
+  'Emmanuel': '#f1c40f',
+  'Tyrese': '#2ecc71',
+  'James': '#58a6ff',
+  'Lina': '#e879f9',
+  'Ricky': '#ef4444',
+};
+
+const trendVisible = { 'Emmanuel': true, 'Tyrese': true, 'James': true, 'Lina': true, 'Ricky': true };
+
+function renderTrendLegend() {
+  const container = document.getElementById('trend-legend');
+  container.innerHTML = Object.keys(SDR_COLORS).map(sdr => {
+    const color = SDR_COLORS[sdr];
+    const active = trendVisible[sdr];
+    return `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;opacity:${active ? 1 : 0.3};" onclick="toggleTrend('${sdr}')">
+      <div style="width:12px;height:3px;background:${color};border-radius:2px;"></div>
+      <span style="font-size:12px;color:${color};">${sdr}</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleTrend(sdr) {
+  trendVisible[sdr] = !trendVisible[sdr];
+  renderTrendLegend();
+  renderTrendChart();
+}
+
+function renderTrendChart() {
+  const canvas = document.getElementById('trend-chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const weeks = TREND.weeks;
+  // Only show weeks where at least one visible SDR has data
+  const activeWeeks = weeks.filter((w, i) => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+  const activeIndices = weeks.map((w, i) => i).filter(i => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+
+  if (activeIndices.length === 0) return;
+
+  const padL = 50, padR = 20, padT = 20, padB = 50;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // Y axis: 0-50%
+  const maxY = 50;
+
+  // Grid
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  ctx.font = '11px -apple-system, sans-serif';
+  ctx.fillStyle = '#8b949e';
+  ctx.textAlign = 'right';
+  for (let y = 0; y <= maxY; y += 10) {
+    const py = padT + chartH - (y / maxY * chartH);
+    ctx.beginPath();
+    ctx.moveTo(padL, py);
+    ctx.lineTo(padL + chartW, py);
+    ctx.stroke();
+    ctx.fillText(y + '%', padL - 8, py + 4);
+  }
+
+  // X axis labels (show every ~4th week)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8b949e';
+  const step = Math.max(1, Math.floor(activeIndices.length / 12));
+  activeIndices.forEach((wi, xi) => {
+    if (xi % step === 0 || xi === activeIndices.length - 1) {
+      const px = padL + (xi / (activeIndices.length - 1)) * chartW;
+      const label = weeks[wi].substring(5); // MM-DD
+      ctx.fillText(label, px, H - padB + 20);
+    }
+  });
+
+  // Store point positions for hover
+  canvas._points = [];
+
+  // Draw lines
+  Object.keys(SDR_COLORS).forEach(sdr => {
+    if (!trendVisible[sdr]) return;
+    const color = SDR_COLORS[sdr];
+    const data = TREND.sdrs[sdr];
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let started = false;
+
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else ctx.lineTo(px, py);
+      canvas._points.push({ x: px, y: py, sdr, week: weeks[wi], rate: d.rate, dials: d.dials, connected: d.connected });
+    });
+    ctx.stroke();
+
+    // Dots and labels
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fill();
+      // Label above dot
+      ctx.font = '9px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(d.connected + '/' + d.dials, px, py - 8);
+    });
+  });
+}
+
+// Tooltip on hover
+document.getElementById('trend-chart').addEventListener('mousemove', (e) => {
+  const canvas = e.target;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const points = canvas._points || [];
+  let closest = null;
+  let minDist = 20;
+  points.forEach(p => {
+    const dist = Math.sqrt((p.x - mx) ** 2 + (p.y - my) ** 2);
+    if (dist < minDist) { minDist = dist; closest = p; }
+  });
+  const tip = document.getElementById('trend-tooltip');
+  if (closest) {
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 12) + 'px';
+    tip.style.top = (e.clientY - 10) + 'px';
+    tip.innerHTML = `<span style="color:${SDR_COLORS[closest.sdr]};font-weight:600;">${closest.sdr}</span><br>
+      Week of ${closest.week}<br>
+      ${closest.rate}% (${closest.connected}/${closest.dials} dials)`;
+  } else {
+    tip.style.display = 'none';
+  }
+});
+
+document.getElementById('trend-chart').addEventListener('mouseleave', () => {
+  document.getElementById('trend-tooltip').style.display = 'none';
+});
+
+renderTrendLegend();
+renderTrendChart();
+window.addEventListener('resize', renderTrendChart);
+
+    };
+    if (compareMode) btn.style.opacity = '0.4';
+    container.appendChild(btn);
+  });
+}
+
+function renderCompareSelects() {
+  const selects = ['compare-left', 'compare-right'];
+  const vals = [compareLeft, compareRight];
+  selects.forEach((id, i) => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = SDR_LIST.filter(s => DATA.sdr_stats[s]).map(s =>
+      `<option value="${s}" ${s === vals[i] ? 'selected' : ''}>${s} (${DATA.sdr_stats[s].rate}%)</option>`
+    ).join('');
+  });
+}
+
+function renderSingleView() {
+  // Stats
+  const stats = DATA.sdr_stats[currentSDR] || {};
+  document.getElementById('stats-bar').innerHTML = `
+    <div class="stat"><div class="stat-label">Total Dials</div><div class="stat-value">${(stats.total || 0).toLocaleString()}</div></div>
+    <div class="stat"><div class="stat-label">Connected</div><div class="stat-value">${(stats.connected || 0).toLocaleString()}</div></div>
+    <div class="stat"><div class="stat-label">Connect Rate</div><div class="stat-value rate">${stats.rate || 0}%</div></div>
+  `;
+  // Best times
+  const data = getData(currentSDR);
+  const slots = [];
+  for (let dow = 0; dow < 5; dow++) {
+    for (const h of HOURS) {
+      const d = data[dow][h];
+      if (d.dials >= minDials) {
+        slots.push({ dow, hour: h, rate: getRate(d.dials, d.connected), dials: d.dials, connected: d.connected });
+      }
+    }
+  }
+  slots.sort((a, b) => b.rate - a.rate);
+  const top = slots.slice(0, 5);
+  const maxRate = top.length ? top[0].rate : 0;
+  const btContainer = document.getElementById('best-times-list');
+  if (top.length === 0) {
+    btContainer.innerHTML = '<div style="color:#8b949e;font-size:13px;padding:8px 0;">Not enough data</div>';
+  } else {
+    btContainer.innerHTML = top.map((s, i) => {
+      const barWidth = maxRate > 0 ? (s.rate / maxRate * 200) : 0;
+      return `<div class="best-time-row">
+        <div class="best-time-rank" style="color:${i === 0 ? '#f1c40f' : i < 3 ? '#58a6ff' : '#8b949e'}">${i + 1}</div>
+        <div class="best-time-slot">${DAYS[s.dow]} ${formatHour(s.hour)}</div>
+        <div class="best-time-bar" style="width:${barWidth}px;background:${rateColor(s.rate, s.dials)}"></div>
+        <div style="font-weight:600;min-width:50px;">${s.rate.toFixed(1)}%</div>
+        <div class="best-time-stats">${s.connected} / ${s.dials} dials</div>
+      </div>`;
+    }).join('');
+  }
+  // Heatmaps
+  document.getElementById('heatmap-table').innerHTML = buildRateTable(currentSDR);
+  document.getElementById('volume-table').innerHTML = buildVolumeTable(currentSDR);
+}
+
+function renderCompareView() {
+  // Stats
+  document.getElementById('compare-stat-left').innerHTML = statHTML(compareLeft);
+  document.getElementById('compare-stat-right').innerHTML = statHTML(compareRight);
+  // Rate tables
+  document.getElementById('compare-rate-title-left').textContent = compareLeft + ' — Connect Rate';
+  document.getElementById('compare-rate-title-right').textContent = compareRight + ' — Connect Rate';
+  document.getElementById('compare-rate-left').innerHTML = buildRateTable(compareLeft);
+  document.getElementById('compare-rate-right').innerHTML = buildRateTable(compareRight);
+  // Volume tables
+  document.getElementById('compare-vol-title-left').textContent = compareLeft + ' — Dial Volume';
+  document.getElementById('compare-vol-title-right').textContent = compareRight + ' — Dial Volume';
+  document.getElementById('compare-vol-left').innerHTML = buildVolumeTable(compareLeft);
+  document.getElementById('compare-vol-right').innerHTML = buildVolumeTable(compareRight);
+}
+
+function render() {
+  const toggle = document.getElementById('compare-toggle');
+  toggle.className = 'sdr-btn' + (compareMode ? ' active' : '');
+  toggle.style.borderColor = compareMode ? '#da6829' : '';
+  toggle.style.color = compareMode ? '' : '#da6829';
+  toggle.style.background = compareMode ? '#da6829' : '';
+
+  document.getElementById('compare-bar').style.display = compareMode ? 'block' : 'none';
+  document.getElementById('single-view').style.display = compareMode ? 'none' : 'block';
+  document.getElementById('compare-view').style.display = compareMode ? 'block' : 'none';
+
+  renderButtons();
+
+  if (compareMode) {
+    renderCompareSelects();
+    renderCompareView();
+  } else {
+    renderSingleView();
+  }
+}
+
+// Events
+document.getElementById('compare-toggle').addEventListener('click', () => {
+  compareMode = !compareMode;
+  render();
+
+const TREND = {"weeks": ["2025-01-27", "2025-02-03", "2025-02-10", "2025-02-17", "2025-02-24", "2025-03-03", "2025-03-10", "2025-03-17", "2025-03-31", "2025-04-07", "2025-04-14", "2025-04-21", "2025-04-28", "2025-05-05", "2025-05-12", "2025-05-19", "2025-05-26", "2025-06-02", "2025-06-09", "2025-06-16", "2025-06-23", "2025-06-30", "2025-07-07", "2025-07-14", "2025-07-21", "2025-07-28", "2025-08-04", "2025-08-11", "2025-08-18", "2025-08-25", "2025-09-01", "2025-09-08", "2025-09-15", "2025-09-22", "2025-09-29", "2025-10-06", "2025-10-13", "2025-10-20", "2025-10-27", "2025-11-03", "2025-11-10", "2025-11-17", "2025-11-24", "2025-12-01", "2025-12-08", "2025-12-15", "2025-12-22", "2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02", "2026-02-09", "2026-02-16", "2026-02-23", "2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"], "sdrs": {"Emmanuel": [{"week": "2025-01-27", "dials": 118, "connected": 14, "rate": 11.9}, {"week": "2025-02-03", "dials": 82, "connected": 14, "rate": 17.1}, {"week": "2025-02-10", "dials": 16, "connected": 6, "rate": 37.5}, {"week": "2025-02-17", "dials": 71, "connected": 8, "rate": 11.3}, {"week": "2025-02-24", "dials": 149, "connected": 25, "rate": 16.8}, {"week": "2025-03-03", "dials": 38, "connected": 17, "rate": 44.7}, {"week": "2025-03-10", "dials": 146, "connected": 26, "rate": 17.8}, {"week": "2025-03-17", "dials": 10, "connected": 1, "rate": 10.0}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 112, "connected": 9, "rate": 8.0}, {"week": "2025-04-14", "dials": 152, "connected": 15, "rate": 9.9}, {"week": "2025-04-21", "dials": 103, "connected": 12, "rate": 11.7}, {"week": "2025-04-28", "dials": 5, "connected": 0, "rate": 0.0}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 173, "connected": 8, "rate": 4.6}, {"week": "2025-05-19", "dials": 122, "connected": 14, "rate": 11.5}, {"week": "2025-05-26", "dials": 76, "connected": 12, "rate": 15.8}, {"week": "2025-06-02", "dials": 105, "connected": 9, "rate": 8.6}, {"week": "2025-06-09", "dials": 228, "connected": 32, "rate": 14.0}, {"week": "2025-06-16", "dials": 51, "connected": 4, "rate": 7.8}, {"week": "2025-06-23", "dials": 87, "connected": 14, "rate": 16.1}, {"week": "2025-06-30", "dials": 64, "connected": 7, "rate": 10.9}, {"week": "2025-07-07", "dials": 44, "connected": 5, "rate": 11.4}, {"week": "2025-07-14", "dials": 75, "connected": 9, "rate": 12.0}, {"week": "2025-07-21", "dials": 148, "connected": 12, "rate": 8.1}, {"week": "2025-07-28", "dials": 93, "connected": 16, "rate": 17.2}, {"week": "2025-08-04", "dials": 24, "connected": 10, "rate": 41.7}, {"week": "2025-08-11", "dials": 163, "connected": 23, "rate": 14.1}, {"week": "2025-08-18", "dials": 121, "connected": 26, "rate": 21.5}, {"week": "2025-08-25", "dials": 80, "connected": 21, "rate": 26.2}, {"week": "2025-09-01", "dials": 56, "connected": 17, "rate": 30.4}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Tyrese": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 3, "connected": 3, "rate": 100.0}, {"week": "2025-09-22", "dials": 6, "connected": 1, "rate": 16.7}, {"week": "2025-09-29", "dials": 40, "connected": 18, "rate": 45.0}, {"week": "2025-10-06", "dials": 107, "connected": 26, "rate": 24.3}, {"week": "2025-10-13", "dials": 118, "connected": 35, "rate": 29.7}, {"week": "2025-10-20", "dials": 80, "connected": 17, "rate": 21.2}, {"week": "2025-10-27", "dials": 64, "connected": 24, "rate": 37.5}, {"week": "2025-11-03", "dials": 86, "connected": 30, "rate": 34.9}, {"week": "2025-11-10", "dials": 116, "connected": 41, "rate": 35.3}, {"week": "2025-11-17", "dials": 137, "connected": 40, "rate": 29.2}, {"week": "2025-11-24", "dials": 114, "connected": 32, "rate": 28.1}, {"week": "2025-12-01", "dials": 71, "connected": 7, "rate": 9.9}, {"week": "2025-12-08", "dials": 110, "connected": 33, "rate": 30.0}, {"week": "2025-12-15", "dials": 57, "connected": 13, "rate": 22.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 72, "connected": 15, "rate": 20.8}, {"week": "2026-01-12", "dials": 12, "connected": 6, "rate": 50.0}, {"week": "2026-01-19", "dials": 42, "connected": 11, "rate": 26.2}, {"week": "2026-01-26", "dials": 185, "connected": 60, "rate": 32.4}, {"week": "2026-02-02", "dials": 153, "connected": 45, "rate": 29.4}, {"week": "2026-02-09", "dials": 200, "connected": 39, "rate": 19.5}, {"week": "2026-02-16", "dials": 98, "connected": 18, "rate": 18.4}, {"week": "2026-02-23", "dials": 75, "connected": 22, "rate": 29.3}, {"week": "2026-03-02", "dials": 137, "connected": 35, "rate": 25.5}, {"week": "2026-03-09", "dials": 102, "connected": 23, "rate": 22.5}, {"week": "2026-03-16", "dials": 82, "connected": 20, "rate": 24.4}, {"week": "2026-03-23", "dials": 48, "connected": 7, "rate": 14.6}], "James": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 16, "connected": 4, "rate": 25.0}, {"week": "2025-02-17", "dials": 11, "connected": 2, "rate": 18.2}, {"week": "2025-02-24", "dials": 16, "connected": 3, "rate": 18.8}, {"week": "2025-03-03", "dials": 64, "connected": 18, "rate": 28.1}, {"week": "2025-03-10", "dials": 53, "connected": 10, "rate": 18.9}, {"week": "2025-03-17", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-03-31", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-04-07", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-04-14", "dials": 19, "connected": 6, "rate": 31.6}, {"week": "2025-04-21", "dials": 103, "connected": 11, "rate": 10.7}, {"week": "2025-04-28", "dials": 96, "connected": 13, "rate": 13.5}, {"week": "2025-05-05", "dials": 91, "connected": 11, "rate": 12.1}, {"week": "2025-05-12", "dials": 52, "connected": 3, "rate": 5.8}, {"week": "2025-05-19", "dials": 90, "connected": 15, "rate": 16.7}, {"week": "2025-05-26", "dials": 57, "connected": 4, "rate": 7.0}, {"week": "2025-06-02", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-06-09", "dials": 32, "connected": 4, "rate": 12.5}, {"week": "2025-06-16", "dials": 54, "connected": 1, "rate": 1.9}, {"week": "2025-06-23", "dials": 58, "connected": 8, "rate": 13.8}, {"week": "2025-06-30", "dials": 43, "connected": 10, "rate": 23.3}, {"week": "2025-07-07", "dials": 18, "connected": 4, "rate": 22.2}, {"week": "2025-07-14", "dials": 11, "connected": 0, "rate": 0.0}, {"week": "2025-07-21", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 10, "connected": 2, "rate": 20.0}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-10-13", "dials": 4, "connected": 0, "rate": 0.0}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 5, "connected": 1, "rate": 20.0}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 3, "connected": 1, "rate": 33.3}, {"week": "2025-12-08", "dials": 6, "connected": 3, "rate": 50.0}, {"week": "2025-12-15", "dials": 37, "connected": 6, "rate": 16.2}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Lina": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 10, "connected": 0, "rate": 0.0}, {"week": "2025-08-04", "dials": 19, "connected": 2, "rate": 10.5}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 106, "connected": 6, "rate": 5.7}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 31, "connected": 3, "rate": 9.7}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 17, "connected": 4, "rate": 23.5}, {"week": "2025-09-29", "dials": 9, "connected": 2, "rate": 22.2}, {"week": "2025-10-06", "dials": 17, "connected": 2, "rate": 11.8}, {"week": "2025-10-13", "dials": 27, "connected": 5, "rate": 18.5}, {"week": "2025-10-20", "dials": 60, "connected": 7, "rate": 11.7}, {"week": "2025-10-27", "dials": 24, "connected": 3, "rate": 12.5}, {"week": "2025-11-03", "dials": 51, "connected": 9, "rate": 17.6}, {"week": "2025-11-10", "dials": 47, "connected": 5, "rate": 10.6}, {"week": "2025-11-17", "dials": 60, "connected": 6, "rate": 10.0}, {"week": "2025-11-24", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-12-01", "dials": 13, "connected": 1, "rate": 7.7}, {"week": "2025-12-08", "dials": 77, "connected": 10, "rate": 13.0}, {"week": "2025-12-15", "dials": 17, "connected": 1, "rate": 5.9}, {"week": "2025-12-22", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 37, "connected": 5, "rate": 13.5}, {"week": "2026-01-26", "dials": 50, "connected": 4, "rate": 8.0}, {"week": "2026-02-02", "dials": 70, "connected": 6, "rate": 8.6}, {"week": "2026-02-09", "dials": 111, "connected": 11, "rate": 9.9}, {"week": "2026-02-16", "dials": 141, "connected": 9, "rate": 6.4}, {"week": "2026-02-23", "dials": 133, "connected": 10, "rate": 7.5}, {"week": "2026-03-02", "dials": 99, "connected": 9, "rate": 9.1}, {"week": "2026-03-09", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-16", "dials": 108, "connected": 8, "rate": 7.4}, {"week": "2026-03-23", "dials": 123, "connected": 12, "rate": 9.8}], "Ricky": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-11-17", "dials": 21, "connected": 5, "rate": 23.8}, {"week": "2025-11-24", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-12-01", "dials": 34, "connected": 7, "rate": 20.6}, {"week": "2025-12-08", "dials": 144, "connected": 7, "rate": 4.9}, {"week": "2025-12-15", "dials": 62, "connected": 3, "rate": 4.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 59, "connected": 0, "rate": 0.0}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 27, "connected": 2, "rate": 7.4}, {"week": "2026-01-26", "dials": 70, "connected": 12, "rate": 17.1}, {"week": "2026-02-02", "dials": 76, "connected": 6, "rate": 7.9}, {"week": "2026-02-09", "dials": 97, "connected": 3, "rate": 3.1}, {"week": "2026-02-16", "dials": 134, "connected": 13, "rate": 9.7}, {"week": "2026-02-23", "dials": 69, "connected": 8, "rate": 11.6}, {"week": "2026-03-02", "dials": 114, "connected": 15, "rate": 13.2}, {"week": "2026-03-09", "dials": 123, "connected": 12, "rate": 9.8}, {"week": "2026-03-16", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-23", "dials": 69, "connected": 6, "rate": 8.7}]}};
+
+const SDR_COLORS = {
+  'Emmanuel': '#f1c40f',
+  'Tyrese': '#2ecc71',
+  'James': '#58a6ff',
+  'Lina': '#e879f9',
+  'Ricky': '#ef4444',
+};
+
+const trendVisible = { 'Emmanuel': true, 'Tyrese': true, 'James': true, 'Lina': true, 'Ricky': true };
+
+function renderTrendLegend() {
+  const container = document.getElementById('trend-legend');
+  container.innerHTML = Object.keys(SDR_COLORS).map(sdr => {
+    const color = SDR_COLORS[sdr];
+    const active = trendVisible[sdr];
+    return `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;opacity:${active ? 1 : 0.3};" onclick="toggleTrend('${sdr}')">
+      <div style="width:12px;height:3px;background:${color};border-radius:2px;"></div>
+      <span style="font-size:12px;color:${color};">${sdr}</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleTrend(sdr) {
+  trendVisible[sdr] = !trendVisible[sdr];
+  renderTrendLegend();
+  renderTrendChart();
+}
+
+function renderTrendChart() {
+  const canvas = document.getElementById('trend-chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const weeks = TREND.weeks;
+  // Only show weeks where at least one visible SDR has data
+  const activeWeeks = weeks.filter((w, i) => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+  const activeIndices = weeks.map((w, i) => i).filter(i => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+
+  if (activeIndices.length === 0) return;
+
+  const padL = 50, padR = 20, padT = 20, padB = 50;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // Y axis: 0-50%
+  const maxY = 50;
+
+  // Grid
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  ctx.font = '11px -apple-system, sans-serif';
+  ctx.fillStyle = '#8b949e';
+  ctx.textAlign = 'right';
+  for (let y = 0; y <= maxY; y += 10) {
+    const py = padT + chartH - (y / maxY * chartH);
+    ctx.beginPath();
+    ctx.moveTo(padL, py);
+    ctx.lineTo(padL + chartW, py);
+    ctx.stroke();
+    ctx.fillText(y + '%', padL - 8, py + 4);
+  }
+
+  // X axis labels (show every ~4th week)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8b949e';
+  const step = Math.max(1, Math.floor(activeIndices.length / 12));
+  activeIndices.forEach((wi, xi) => {
+    if (xi % step === 0 || xi === activeIndices.length - 1) {
+      const px = padL + (xi / (activeIndices.length - 1)) * chartW;
+      const label = weeks[wi].substring(5); // MM-DD
+      ctx.fillText(label, px, H - padB + 20);
+    }
+  });
+
+  // Store point positions for hover
+  canvas._points = [];
+
+  // Draw lines
+  Object.keys(SDR_COLORS).forEach(sdr => {
+    if (!trendVisible[sdr]) return;
+    const color = SDR_COLORS[sdr];
+    const data = TREND.sdrs[sdr];
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let started = false;
+
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else ctx.lineTo(px, py);
+      canvas._points.push({ x: px, y: py, sdr, week: weeks[wi], rate: d.rate, dials: d.dials, connected: d.connected });
+    });
+    ctx.stroke();
+
+    // Dots
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  });
+}
+
+// Tooltip on hover
+document.getElementById('trend-chart').addEventListener('mousemove', (e) => {
+  const canvas = e.target;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const points = canvas._points || [];
+  let closest = null;
+  let minDist = 20;
+  points.forEach(p => {
+    const dist = Math.sqrt((p.x - mx) ** 2 + (p.y - my) ** 2);
+    if (dist < minDist) { minDist = dist; closest = p; }
+  });
+  const tip = document.getElementById('trend-tooltip');
+  if (closest) {
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 12) + 'px';
+    tip.style.top = (e.clientY - 10) + 'px';
+    tip.innerHTML = `<span style="color:${SDR_COLORS[closest.sdr]};font-weight:600;">${closest.sdr}</span><br>
+      Week of ${closest.week}<br>
+      ${closest.rate}% (${closest.connected}/${closest.dials} dials)`;
+  } else {
+    tip.style.display = 'none';
+  }
+});
+
+document.getElementById('trend-chart').addEventListener('mouseleave', () => {
+  document.getElementById('trend-tooltip').style.display = 'none';
+});
+
+renderTrendLegend();
+renderTrendChart();
+window.addEventListener('resize', renderTrendChart);
+
+});
+
+document.getElementById('compare-left').addEventListener('change', (e) => {
+  compareLeft = e.target.value;
+  render();
+
+const TREND = {"weeks": ["2025-01-27", "2025-02-03", "2025-02-10", "2025-02-17", "2025-02-24", "2025-03-03", "2025-03-10", "2025-03-17", "2025-03-31", "2025-04-07", "2025-04-14", "2025-04-21", "2025-04-28", "2025-05-05", "2025-05-12", "2025-05-19", "2025-05-26", "2025-06-02", "2025-06-09", "2025-06-16", "2025-06-23", "2025-06-30", "2025-07-07", "2025-07-14", "2025-07-21", "2025-07-28", "2025-08-04", "2025-08-11", "2025-08-18", "2025-08-25", "2025-09-01", "2025-09-08", "2025-09-15", "2025-09-22", "2025-09-29", "2025-10-06", "2025-10-13", "2025-10-20", "2025-10-27", "2025-11-03", "2025-11-10", "2025-11-17", "2025-11-24", "2025-12-01", "2025-12-08", "2025-12-15", "2025-12-22", "2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02", "2026-02-09", "2026-02-16", "2026-02-23", "2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"], "sdrs": {"Emmanuel": [{"week": "2025-01-27", "dials": 118, "connected": 14, "rate": 11.9}, {"week": "2025-02-03", "dials": 82, "connected": 14, "rate": 17.1}, {"week": "2025-02-10", "dials": 16, "connected": 6, "rate": 37.5}, {"week": "2025-02-17", "dials": 71, "connected": 8, "rate": 11.3}, {"week": "2025-02-24", "dials": 149, "connected": 25, "rate": 16.8}, {"week": "2025-03-03", "dials": 38, "connected": 17, "rate": 44.7}, {"week": "2025-03-10", "dials": 146, "connected": 26, "rate": 17.8}, {"week": "2025-03-17", "dials": 10, "connected": 1, "rate": 10.0}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 112, "connected": 9, "rate": 8.0}, {"week": "2025-04-14", "dials": 152, "connected": 15, "rate": 9.9}, {"week": "2025-04-21", "dials": 103, "connected": 12, "rate": 11.7}, {"week": "2025-04-28", "dials": 5, "connected": 0, "rate": 0.0}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 173, "connected": 8, "rate": 4.6}, {"week": "2025-05-19", "dials": 122, "connected": 14, "rate": 11.5}, {"week": "2025-05-26", "dials": 76, "connected": 12, "rate": 15.8}, {"week": "2025-06-02", "dials": 105, "connected": 9, "rate": 8.6}, {"week": "2025-06-09", "dials": 228, "connected": 32, "rate": 14.0}, {"week": "2025-06-16", "dials": 51, "connected": 4, "rate": 7.8}, {"week": "2025-06-23", "dials": 87, "connected": 14, "rate": 16.1}, {"week": "2025-06-30", "dials": 64, "connected": 7, "rate": 10.9}, {"week": "2025-07-07", "dials": 44, "connected": 5, "rate": 11.4}, {"week": "2025-07-14", "dials": 75, "connected": 9, "rate": 12.0}, {"week": "2025-07-21", "dials": 148, "connected": 12, "rate": 8.1}, {"week": "2025-07-28", "dials": 93, "connected": 16, "rate": 17.2}, {"week": "2025-08-04", "dials": 24, "connected": 10, "rate": 41.7}, {"week": "2025-08-11", "dials": 163, "connected": 23, "rate": 14.1}, {"week": "2025-08-18", "dials": 121, "connected": 26, "rate": 21.5}, {"week": "2025-08-25", "dials": 80, "connected": 21, "rate": 26.2}, {"week": "2025-09-01", "dials": 56, "connected": 17, "rate": 30.4}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Tyrese": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 3, "connected": 3, "rate": 100.0}, {"week": "2025-09-22", "dials": 6, "connected": 1, "rate": 16.7}, {"week": "2025-09-29", "dials": 40, "connected": 18, "rate": 45.0}, {"week": "2025-10-06", "dials": 107, "connected": 26, "rate": 24.3}, {"week": "2025-10-13", "dials": 118, "connected": 35, "rate": 29.7}, {"week": "2025-10-20", "dials": 80, "connected": 17, "rate": 21.2}, {"week": "2025-10-27", "dials": 64, "connected": 24, "rate": 37.5}, {"week": "2025-11-03", "dials": 86, "connected": 30, "rate": 34.9}, {"week": "2025-11-10", "dials": 116, "connected": 41, "rate": 35.3}, {"week": "2025-11-17", "dials": 137, "connected": 40, "rate": 29.2}, {"week": "2025-11-24", "dials": 114, "connected": 32, "rate": 28.1}, {"week": "2025-12-01", "dials": 71, "connected": 7, "rate": 9.9}, {"week": "2025-12-08", "dials": 110, "connected": 33, "rate": 30.0}, {"week": "2025-12-15", "dials": 57, "connected": 13, "rate": 22.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 72, "connected": 15, "rate": 20.8}, {"week": "2026-01-12", "dials": 12, "connected": 6, "rate": 50.0}, {"week": "2026-01-19", "dials": 42, "connected": 11, "rate": 26.2}, {"week": "2026-01-26", "dials": 185, "connected": 60, "rate": 32.4}, {"week": "2026-02-02", "dials": 153, "connected": 45, "rate": 29.4}, {"week": "2026-02-09", "dials": 200, "connected": 39, "rate": 19.5}, {"week": "2026-02-16", "dials": 98, "connected": 18, "rate": 18.4}, {"week": "2026-02-23", "dials": 75, "connected": 22, "rate": 29.3}, {"week": "2026-03-02", "dials": 137, "connected": 35, "rate": 25.5}, {"week": "2026-03-09", "dials": 102, "connected": 23, "rate": 22.5}, {"week": "2026-03-16", "dials": 82, "connected": 20, "rate": 24.4}, {"week": "2026-03-23", "dials": 48, "connected": 7, "rate": 14.6}], "James": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 16, "connected": 4, "rate": 25.0}, {"week": "2025-02-17", "dials": 11, "connected": 2, "rate": 18.2}, {"week": "2025-02-24", "dials": 16, "connected": 3, "rate": 18.8}, {"week": "2025-03-03", "dials": 64, "connected": 18, "rate": 28.1}, {"week": "2025-03-10", "dials": 53, "connected": 10, "rate": 18.9}, {"week": "2025-03-17", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-03-31", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-04-07", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-04-14", "dials": 19, "connected": 6, "rate": 31.6}, {"week": "2025-04-21", "dials": 103, "connected": 11, "rate": 10.7}, {"week": "2025-04-28", "dials": 96, "connected": 13, "rate": 13.5}, {"week": "2025-05-05", "dials": 91, "connected": 11, "rate": 12.1}, {"week": "2025-05-12", "dials": 52, "connected": 3, "rate": 5.8}, {"week": "2025-05-19", "dials": 90, "connected": 15, "rate": 16.7}, {"week": "2025-05-26", "dials": 57, "connected": 4, "rate": 7.0}, {"week": "2025-06-02", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-06-09", "dials": 32, "connected": 4, "rate": 12.5}, {"week": "2025-06-16", "dials": 54, "connected": 1, "rate": 1.9}, {"week": "2025-06-23", "dials": 58, "connected": 8, "rate": 13.8}, {"week": "2025-06-30", "dials": 43, "connected": 10, "rate": 23.3}, {"week": "2025-07-07", "dials": 18, "connected": 4, "rate": 22.2}, {"week": "2025-07-14", "dials": 11, "connected": 0, "rate": 0.0}, {"week": "2025-07-21", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 10, "connected": 2, "rate": 20.0}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-10-13", "dials": 4, "connected": 0, "rate": 0.0}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 5, "connected": 1, "rate": 20.0}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 3, "connected": 1, "rate": 33.3}, {"week": "2025-12-08", "dials": 6, "connected": 3, "rate": 50.0}, {"week": "2025-12-15", "dials": 37, "connected": 6, "rate": 16.2}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Lina": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 10, "connected": 0, "rate": 0.0}, {"week": "2025-08-04", "dials": 19, "connected": 2, "rate": 10.5}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 106, "connected": 6, "rate": 5.7}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 31, "connected": 3, "rate": 9.7}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 17, "connected": 4, "rate": 23.5}, {"week": "2025-09-29", "dials": 9, "connected": 2, "rate": 22.2}, {"week": "2025-10-06", "dials": 17, "connected": 2, "rate": 11.8}, {"week": "2025-10-13", "dials": 27, "connected": 5, "rate": 18.5}, {"week": "2025-10-20", "dials": 60, "connected": 7, "rate": 11.7}, {"week": "2025-10-27", "dials": 24, "connected": 3, "rate": 12.5}, {"week": "2025-11-03", "dials": 51, "connected": 9, "rate": 17.6}, {"week": "2025-11-10", "dials": 47, "connected": 5, "rate": 10.6}, {"week": "2025-11-17", "dials": 60, "connected": 6, "rate": 10.0}, {"week": "2025-11-24", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-12-01", "dials": 13, "connected": 1, "rate": 7.7}, {"week": "2025-12-08", "dials": 77, "connected": 10, "rate": 13.0}, {"week": "2025-12-15", "dials": 17, "connected": 1, "rate": 5.9}, {"week": "2025-12-22", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 37, "connected": 5, "rate": 13.5}, {"week": "2026-01-26", "dials": 50, "connected": 4, "rate": 8.0}, {"week": "2026-02-02", "dials": 70, "connected": 6, "rate": 8.6}, {"week": "2026-02-09", "dials": 111, "connected": 11, "rate": 9.9}, {"week": "2026-02-16", "dials": 141, "connected": 9, "rate": 6.4}, {"week": "2026-02-23", "dials": 133, "connected": 10, "rate": 7.5}, {"week": "2026-03-02", "dials": 99, "connected": 9, "rate": 9.1}, {"week": "2026-03-09", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-16", "dials": 108, "connected": 8, "rate": 7.4}, {"week": "2026-03-23", "dials": 123, "connected": 12, "rate": 9.8}], "Ricky": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-11-17", "dials": 21, "connected": 5, "rate": 23.8}, {"week": "2025-11-24", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-12-01", "dials": 34, "connected": 7, "rate": 20.6}, {"week": "2025-12-08", "dials": 144, "connected": 7, "rate": 4.9}, {"week": "2025-12-15", "dials": 62, "connected": 3, "rate": 4.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 59, "connected": 0, "rate": 0.0}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 27, "connected": 2, "rate": 7.4}, {"week": "2026-01-26", "dials": 70, "connected": 12, "rate": 17.1}, {"week": "2026-02-02", "dials": 76, "connected": 6, "rate": 7.9}, {"week": "2026-02-09", "dials": 97, "connected": 3, "rate": 3.1}, {"week": "2026-02-16", "dials": 134, "connected": 13, "rate": 9.7}, {"week": "2026-02-23", "dials": 69, "connected": 8, "rate": 11.6}, {"week": "2026-03-02", "dials": 114, "connected": 15, "rate": 13.2}, {"week": "2026-03-09", "dials": 123, "connected": 12, "rate": 9.8}, {"week": "2026-03-16", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-23", "dials": 69, "connected": 6, "rate": 8.7}]}};
+
+const SDR_COLORS = {
+  'Emmanuel': '#f1c40f',
+  'Tyrese': '#2ecc71',
+  'James': '#58a6ff',
+  'Lina': '#e879f9',
+  'Ricky': '#ef4444',
+};
+
+const trendVisible = { 'Emmanuel': true, 'Tyrese': true, 'James': true, 'Lina': true, 'Ricky': true };
+
+function renderTrendLegend() {
+  const container = document.getElementById('trend-legend');
+  container.innerHTML = Object.keys(SDR_COLORS).map(sdr => {
+    const color = SDR_COLORS[sdr];
+    const active = trendVisible[sdr];
+    return `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;opacity:${active ? 1 : 0.3};" onclick="toggleTrend('${sdr}')">
+      <div style="width:12px;height:3px;background:${color};border-radius:2px;"></div>
+      <span style="font-size:12px;color:${color};">${sdr}</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleTrend(sdr) {
+  trendVisible[sdr] = !trendVisible[sdr];
+  renderTrendLegend();
+  renderTrendChart();
+}
+
+function renderTrendChart() {
+  const canvas = document.getElementById('trend-chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const weeks = TREND.weeks;
+  // Only show weeks where at least one visible SDR has data
+  const activeWeeks = weeks.filter((w, i) => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+  const activeIndices = weeks.map((w, i) => i).filter(i => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+
+  if (activeIndices.length === 0) return;
+
+  const padL = 50, padR = 20, padT = 20, padB = 50;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // Y axis: 0-50%
+  const maxY = 50;
+
+  // Grid
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  ctx.font = '11px -apple-system, sans-serif';
+  ctx.fillStyle = '#8b949e';
+  ctx.textAlign = 'right';
+  for (let y = 0; y <= maxY; y += 10) {
+    const py = padT + chartH - (y / maxY * chartH);
+    ctx.beginPath();
+    ctx.moveTo(padL, py);
+    ctx.lineTo(padL + chartW, py);
+    ctx.stroke();
+    ctx.fillText(y + '%', padL - 8, py + 4);
+  }
+
+  // X axis labels (show every ~4th week)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8b949e';
+  const step = Math.max(1, Math.floor(activeIndices.length / 12));
+  activeIndices.forEach((wi, xi) => {
+    if (xi % step === 0 || xi === activeIndices.length - 1) {
+      const px = padL + (xi / (activeIndices.length - 1)) * chartW;
+      const label = weeks[wi].substring(5); // MM-DD
+      ctx.fillText(label, px, H - padB + 20);
+    }
+  });
+
+  // Store point positions for hover
+  canvas._points = [];
+
+  // Draw lines
+  Object.keys(SDR_COLORS).forEach(sdr => {
+    if (!trendVisible[sdr]) return;
+    const color = SDR_COLORS[sdr];
+    const data = TREND.sdrs[sdr];
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let started = false;
+
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else ctx.lineTo(px, py);
+      canvas._points.push({ x: px, y: py, sdr, week: weeks[wi], rate: d.rate, dials: d.dials, connected: d.connected });
+    });
+    ctx.stroke();
+
+    // Dots
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  });
+}
+
+// Tooltip on hover
+document.getElementById('trend-chart').addEventListener('mousemove', (e) => {
+  const canvas = e.target;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const points = canvas._points || [];
+  let closest = null;
+  let minDist = 20;
+  points.forEach(p => {
+    const dist = Math.sqrt((p.x - mx) ** 2 + (p.y - my) ** 2);
+    if (dist < minDist) { minDist = dist; closest = p; }
+  });
+  const tip = document.getElementById('trend-tooltip');
+  if (closest) {
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 12) + 'px';
+    tip.style.top = (e.clientY - 10) + 'px';
+    tip.innerHTML = `<span style="color:${SDR_COLORS[closest.sdr]};font-weight:600;">${closest.sdr}</span><br>
+      Week of ${closest.week}<br>
+      ${closest.rate}% (${closest.connected}/${closest.dials} dials)`;
+  } else {
+    tip.style.display = 'none';
+  }
+});
+
+document.getElementById('trend-chart').addEventListener('mouseleave', () => {
+  document.getElementById('trend-tooltip').style.display = 'none';
+});
+
+renderTrendLegend();
+renderTrendChart();
+window.addEventListener('resize', renderTrendChart);
+
+});
+
+document.getElementById('compare-right').addEventListener('change', (e) => {
+  compareRight = e.target.value;
+  render();
+
+const TREND = {"weeks": ["2025-01-27", "2025-02-03", "2025-02-10", "2025-02-17", "2025-02-24", "2025-03-03", "2025-03-10", "2025-03-17", "2025-03-31", "2025-04-07", "2025-04-14", "2025-04-21", "2025-04-28", "2025-05-05", "2025-05-12", "2025-05-19", "2025-05-26", "2025-06-02", "2025-06-09", "2025-06-16", "2025-06-23", "2025-06-30", "2025-07-07", "2025-07-14", "2025-07-21", "2025-07-28", "2025-08-04", "2025-08-11", "2025-08-18", "2025-08-25", "2025-09-01", "2025-09-08", "2025-09-15", "2025-09-22", "2025-09-29", "2025-10-06", "2025-10-13", "2025-10-20", "2025-10-27", "2025-11-03", "2025-11-10", "2025-11-17", "2025-11-24", "2025-12-01", "2025-12-08", "2025-12-15", "2025-12-22", "2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02", "2026-02-09", "2026-02-16", "2026-02-23", "2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"], "sdrs": {"Emmanuel": [{"week": "2025-01-27", "dials": 118, "connected": 14, "rate": 11.9}, {"week": "2025-02-03", "dials": 82, "connected": 14, "rate": 17.1}, {"week": "2025-02-10", "dials": 16, "connected": 6, "rate": 37.5}, {"week": "2025-02-17", "dials": 71, "connected": 8, "rate": 11.3}, {"week": "2025-02-24", "dials": 149, "connected": 25, "rate": 16.8}, {"week": "2025-03-03", "dials": 38, "connected": 17, "rate": 44.7}, {"week": "2025-03-10", "dials": 146, "connected": 26, "rate": 17.8}, {"week": "2025-03-17", "dials": 10, "connected": 1, "rate": 10.0}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 112, "connected": 9, "rate": 8.0}, {"week": "2025-04-14", "dials": 152, "connected": 15, "rate": 9.9}, {"week": "2025-04-21", "dials": 103, "connected": 12, "rate": 11.7}, {"week": "2025-04-28", "dials": 5, "connected": 0, "rate": 0.0}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 173, "connected": 8, "rate": 4.6}, {"week": "2025-05-19", "dials": 122, "connected": 14, "rate": 11.5}, {"week": "2025-05-26", "dials": 76, "connected": 12, "rate": 15.8}, {"week": "2025-06-02", "dials": 105, "connected": 9, "rate": 8.6}, {"week": "2025-06-09", "dials": 228, "connected": 32, "rate": 14.0}, {"week": "2025-06-16", "dials": 51, "connected": 4, "rate": 7.8}, {"week": "2025-06-23", "dials": 87, "connected": 14, "rate": 16.1}, {"week": "2025-06-30", "dials": 64, "connected": 7, "rate": 10.9}, {"week": "2025-07-07", "dials": 44, "connected": 5, "rate": 11.4}, {"week": "2025-07-14", "dials": 75, "connected": 9, "rate": 12.0}, {"week": "2025-07-21", "dials": 148, "connected": 12, "rate": 8.1}, {"week": "2025-07-28", "dials": 93, "connected": 16, "rate": 17.2}, {"week": "2025-08-04", "dials": 24, "connected": 10, "rate": 41.7}, {"week": "2025-08-11", "dials": 163, "connected": 23, "rate": 14.1}, {"week": "2025-08-18", "dials": 121, "connected": 26, "rate": 21.5}, {"week": "2025-08-25", "dials": 80, "connected": 21, "rate": 26.2}, {"week": "2025-09-01", "dials": 56, "connected": 17, "rate": 30.4}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Tyrese": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 3, "connected": 3, "rate": 100.0}, {"week": "2025-09-22", "dials": 6, "connected": 1, "rate": 16.7}, {"week": "2025-09-29", "dials": 40, "connected": 18, "rate": 45.0}, {"week": "2025-10-06", "dials": 107, "connected": 26, "rate": 24.3}, {"week": "2025-10-13", "dials": 118, "connected": 35, "rate": 29.7}, {"week": "2025-10-20", "dials": 80, "connected": 17, "rate": 21.2}, {"week": "2025-10-27", "dials": 64, "connected": 24, "rate": 37.5}, {"week": "2025-11-03", "dials": 86, "connected": 30, "rate": 34.9}, {"week": "2025-11-10", "dials": 116, "connected": 41, "rate": 35.3}, {"week": "2025-11-17", "dials": 137, "connected": 40, "rate": 29.2}, {"week": "2025-11-24", "dials": 114, "connected": 32, "rate": 28.1}, {"week": "2025-12-01", "dials": 71, "connected": 7, "rate": 9.9}, {"week": "2025-12-08", "dials": 110, "connected": 33, "rate": 30.0}, {"week": "2025-12-15", "dials": 57, "connected": 13, "rate": 22.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 72, "connected": 15, "rate": 20.8}, {"week": "2026-01-12", "dials": 12, "connected": 6, "rate": 50.0}, {"week": "2026-01-19", "dials": 42, "connected": 11, "rate": 26.2}, {"week": "2026-01-26", "dials": 185, "connected": 60, "rate": 32.4}, {"week": "2026-02-02", "dials": 153, "connected": 45, "rate": 29.4}, {"week": "2026-02-09", "dials": 200, "connected": 39, "rate": 19.5}, {"week": "2026-02-16", "dials": 98, "connected": 18, "rate": 18.4}, {"week": "2026-02-23", "dials": 75, "connected": 22, "rate": 29.3}, {"week": "2026-03-02", "dials": 137, "connected": 35, "rate": 25.5}, {"week": "2026-03-09", "dials": 102, "connected": 23, "rate": 22.5}, {"week": "2026-03-16", "dials": 82, "connected": 20, "rate": 24.4}, {"week": "2026-03-23", "dials": 48, "connected": 7, "rate": 14.6}], "James": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 16, "connected": 4, "rate": 25.0}, {"week": "2025-02-17", "dials": 11, "connected": 2, "rate": 18.2}, {"week": "2025-02-24", "dials": 16, "connected": 3, "rate": 18.8}, {"week": "2025-03-03", "dials": 64, "connected": 18, "rate": 28.1}, {"week": "2025-03-10", "dials": 53, "connected": 10, "rate": 18.9}, {"week": "2025-03-17", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-03-31", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-04-07", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-04-14", "dials": 19, "connected": 6, "rate": 31.6}, {"week": "2025-04-21", "dials": 103, "connected": 11, "rate": 10.7}, {"week": "2025-04-28", "dials": 96, "connected": 13, "rate": 13.5}, {"week": "2025-05-05", "dials": 91, "connected": 11, "rate": 12.1}, {"week": "2025-05-12", "dials": 52, "connected": 3, "rate": 5.8}, {"week": "2025-05-19", "dials": 90, "connected": 15, "rate": 16.7}, {"week": "2025-05-26", "dials": 57, "connected": 4, "rate": 7.0}, {"week": "2025-06-02", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-06-09", "dials": 32, "connected": 4, "rate": 12.5}, {"week": "2025-06-16", "dials": 54, "connected": 1, "rate": 1.9}, {"week": "2025-06-23", "dials": 58, "connected": 8, "rate": 13.8}, {"week": "2025-06-30", "dials": 43, "connected": 10, "rate": 23.3}, {"week": "2025-07-07", "dials": 18, "connected": 4, "rate": 22.2}, {"week": "2025-07-14", "dials": 11, "connected": 0, "rate": 0.0}, {"week": "2025-07-21", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 10, "connected": 2, "rate": 20.0}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-10-13", "dials": 4, "connected": 0, "rate": 0.0}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 5, "connected": 1, "rate": 20.0}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 3, "connected": 1, "rate": 33.3}, {"week": "2025-12-08", "dials": 6, "connected": 3, "rate": 50.0}, {"week": "2025-12-15", "dials": 37, "connected": 6, "rate": 16.2}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Lina": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 10, "connected": 0, "rate": 0.0}, {"week": "2025-08-04", "dials": 19, "connected": 2, "rate": 10.5}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 106, "connected": 6, "rate": 5.7}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 31, "connected": 3, "rate": 9.7}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 17, "connected": 4, "rate": 23.5}, {"week": "2025-09-29", "dials": 9, "connected": 2, "rate": 22.2}, {"week": "2025-10-06", "dials": 17, "connected": 2, "rate": 11.8}, {"week": "2025-10-13", "dials": 27, "connected": 5, "rate": 18.5}, {"week": "2025-10-20", "dials": 60, "connected": 7, "rate": 11.7}, {"week": "2025-10-27", "dials": 24, "connected": 3, "rate": 12.5}, {"week": "2025-11-03", "dials": 51, "connected": 9, "rate": 17.6}, {"week": "2025-11-10", "dials": 47, "connected": 5, "rate": 10.6}, {"week": "2025-11-17", "dials": 60, "connected": 6, "rate": 10.0}, {"week": "2025-11-24", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-12-01", "dials": 13, "connected": 1, "rate": 7.7}, {"week": "2025-12-08", "dials": 77, "connected": 10, "rate": 13.0}, {"week": "2025-12-15", "dials": 17, "connected": 1, "rate": 5.9}, {"week": "2025-12-22", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 37, "connected": 5, "rate": 13.5}, {"week": "2026-01-26", "dials": 50, "connected": 4, "rate": 8.0}, {"week": "2026-02-02", "dials": 70, "connected": 6, "rate": 8.6}, {"week": "2026-02-09", "dials": 111, "connected": 11, "rate": 9.9}, {"week": "2026-02-16", "dials": 141, "connected": 9, "rate": 6.4}, {"week": "2026-02-23", "dials": 133, "connected": 10, "rate": 7.5}, {"week": "2026-03-02", "dials": 99, "connected": 9, "rate": 9.1}, {"week": "2026-03-09", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-16", "dials": 108, "connected": 8, "rate": 7.4}, {"week": "2026-03-23", "dials": 123, "connected": 12, "rate": 9.8}], "Ricky": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-11-17", "dials": 21, "connected": 5, "rate": 23.8}, {"week": "2025-11-24", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-12-01", "dials": 34, "connected": 7, "rate": 20.6}, {"week": "2025-12-08", "dials": 144, "connected": 7, "rate": 4.9}, {"week": "2025-12-15", "dials": 62, "connected": 3, "rate": 4.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 59, "connected": 0, "rate": 0.0}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 27, "connected": 2, "rate": 7.4}, {"week": "2026-01-26", "dials": 70, "connected": 12, "rate": 17.1}, {"week": "2026-02-02", "dials": 76, "connected": 6, "rate": 7.9}, {"week": "2026-02-09", "dials": 97, "connected": 3, "rate": 3.1}, {"week": "2026-02-16", "dials": 134, "connected": 13, "rate": 9.7}, {"week": "2026-02-23", "dials": 69, "connected": 8, "rate": 11.6}, {"week": "2026-03-02", "dials": 114, "connected": 15, "rate": 13.2}, {"week": "2026-03-09", "dials": 123, "connected": 12, "rate": 9.8}, {"week": "2026-03-16", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-23", "dials": 69, "connected": 6, "rate": 8.7}]}};
+
+const SDR_COLORS = {
+  'Emmanuel': '#f1c40f',
+  'Tyrese': '#2ecc71',
+  'James': '#58a6ff',
+  'Lina': '#e879f9',
+  'Ricky': '#ef4444',
+};
+
+const trendVisible = { 'Emmanuel': true, 'Tyrese': true, 'James': true, 'Lina': true, 'Ricky': true };
+
+function renderTrendLegend() {
+  const container = document.getElementById('trend-legend');
+  container.innerHTML = Object.keys(SDR_COLORS).map(sdr => {
+    const color = SDR_COLORS[sdr];
+    const active = trendVisible[sdr];
+    return `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;opacity:${active ? 1 : 0.3};" onclick="toggleTrend('${sdr}')">
+      <div style="width:12px;height:3px;background:${color};border-radius:2px;"></div>
+      <span style="font-size:12px;color:${color};">${sdr}</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleTrend(sdr) {
+  trendVisible[sdr] = !trendVisible[sdr];
+  renderTrendLegend();
+  renderTrendChart();
+}
+
+function renderTrendChart() {
+  const canvas = document.getElementById('trend-chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const weeks = TREND.weeks;
+  // Only show weeks where at least one visible SDR has data
+  const activeWeeks = weeks.filter((w, i) => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+  const activeIndices = weeks.map((w, i) => i).filter(i => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+
+  if (activeIndices.length === 0) return;
+
+  const padL = 50, padR = 20, padT = 20, padB = 50;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // Y axis: 0-50%
+  const maxY = 50;
+
+  // Grid
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  ctx.font = '11px -apple-system, sans-serif';
+  ctx.fillStyle = '#8b949e';
+  ctx.textAlign = 'right';
+  for (let y = 0; y <= maxY; y += 10) {
+    const py = padT + chartH - (y / maxY * chartH);
+    ctx.beginPath();
+    ctx.moveTo(padL, py);
+    ctx.lineTo(padL + chartW, py);
+    ctx.stroke();
+    ctx.fillText(y + '%', padL - 8, py + 4);
+  }
+
+  // X axis labels (show every ~4th week)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8b949e';
+  const step = Math.max(1, Math.floor(activeIndices.length / 12));
+  activeIndices.forEach((wi, xi) => {
+    if (xi % step === 0 || xi === activeIndices.length - 1) {
+      const px = padL + (xi / (activeIndices.length - 1)) * chartW;
+      const label = weeks[wi].substring(5); // MM-DD
+      ctx.fillText(label, px, H - padB + 20);
+    }
+  });
+
+  // Store point positions for hover
+  canvas._points = [];
+
+  // Draw lines
+  Object.keys(SDR_COLORS).forEach(sdr => {
+    if (!trendVisible[sdr]) return;
+    const color = SDR_COLORS[sdr];
+    const data = TREND.sdrs[sdr];
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let started = false;
+
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else ctx.lineTo(px, py);
+      canvas._points.push({ x: px, y: py, sdr, week: weeks[wi], rate: d.rate, dials: d.dials, connected: d.connected });
+    });
+    ctx.stroke();
+
+    // Dots
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  });
+}
+
+// Tooltip on hover
+document.getElementById('trend-chart').addEventListener('mousemove', (e) => {
+  const canvas = e.target;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const points = canvas._points || [];
+  let closest = null;
+  let minDist = 20;
+  points.forEach(p => {
+    const dist = Math.sqrt((p.x - mx) ** 2 + (p.y - my) ** 2);
+    if (dist < minDist) { minDist = dist; closest = p; }
+  });
+  const tip = document.getElementById('trend-tooltip');
+  if (closest) {
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 12) + 'px';
+    tip.style.top = (e.clientY - 10) + 'px';
+    tip.innerHTML = `<span style="color:${SDR_COLORS[closest.sdr]};font-weight:600;">${closest.sdr}</span><br>
+      Week of ${closest.week}<br>
+      ${closest.rate}% (${closest.connected}/${closest.dials} dials)`;
+  } else {
+    tip.style.display = 'none';
+  }
+});
+
+document.getElementById('trend-chart').addEventListener('mouseleave', () => {
+  document.getElementById('trend-tooltip').style.display = 'none';
+});
+
+renderTrendLegend();
+renderTrendChart();
+window.addEventListener('resize', renderTrendChart);
+
+});
+
+document.getElementById('min-dials').addEventListener('change', (e) => {
+  minDials = parseInt(e.target.value) || 1;
+  render();
+
+const TREND = {"weeks": ["2025-01-27", "2025-02-03", "2025-02-10", "2025-02-17", "2025-02-24", "2025-03-03", "2025-03-10", "2025-03-17", "2025-03-31", "2025-04-07", "2025-04-14", "2025-04-21", "2025-04-28", "2025-05-05", "2025-05-12", "2025-05-19", "2025-05-26", "2025-06-02", "2025-06-09", "2025-06-16", "2025-06-23", "2025-06-30", "2025-07-07", "2025-07-14", "2025-07-21", "2025-07-28", "2025-08-04", "2025-08-11", "2025-08-18", "2025-08-25", "2025-09-01", "2025-09-08", "2025-09-15", "2025-09-22", "2025-09-29", "2025-10-06", "2025-10-13", "2025-10-20", "2025-10-27", "2025-11-03", "2025-11-10", "2025-11-17", "2025-11-24", "2025-12-01", "2025-12-08", "2025-12-15", "2025-12-22", "2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02", "2026-02-09", "2026-02-16", "2026-02-23", "2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"], "sdrs": {"Emmanuel": [{"week": "2025-01-27", "dials": 118, "connected": 14, "rate": 11.9}, {"week": "2025-02-03", "dials": 82, "connected": 14, "rate": 17.1}, {"week": "2025-02-10", "dials": 16, "connected": 6, "rate": 37.5}, {"week": "2025-02-17", "dials": 71, "connected": 8, "rate": 11.3}, {"week": "2025-02-24", "dials": 149, "connected": 25, "rate": 16.8}, {"week": "2025-03-03", "dials": 38, "connected": 17, "rate": 44.7}, {"week": "2025-03-10", "dials": 146, "connected": 26, "rate": 17.8}, {"week": "2025-03-17", "dials": 10, "connected": 1, "rate": 10.0}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 112, "connected": 9, "rate": 8.0}, {"week": "2025-04-14", "dials": 152, "connected": 15, "rate": 9.9}, {"week": "2025-04-21", "dials": 103, "connected": 12, "rate": 11.7}, {"week": "2025-04-28", "dials": 5, "connected": 0, "rate": 0.0}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 173, "connected": 8, "rate": 4.6}, {"week": "2025-05-19", "dials": 122, "connected": 14, "rate": 11.5}, {"week": "2025-05-26", "dials": 76, "connected": 12, "rate": 15.8}, {"week": "2025-06-02", "dials": 105, "connected": 9, "rate": 8.6}, {"week": "2025-06-09", "dials": 228, "connected": 32, "rate": 14.0}, {"week": "2025-06-16", "dials": 51, "connected": 4, "rate": 7.8}, {"week": "2025-06-23", "dials": 87, "connected": 14, "rate": 16.1}, {"week": "2025-06-30", "dials": 64, "connected": 7, "rate": 10.9}, {"week": "2025-07-07", "dials": 44, "connected": 5, "rate": 11.4}, {"week": "2025-07-14", "dials": 75, "connected": 9, "rate": 12.0}, {"week": "2025-07-21", "dials": 148, "connected": 12, "rate": 8.1}, {"week": "2025-07-28", "dials": 93, "connected": 16, "rate": 17.2}, {"week": "2025-08-04", "dials": 24, "connected": 10, "rate": 41.7}, {"week": "2025-08-11", "dials": 163, "connected": 23, "rate": 14.1}, {"week": "2025-08-18", "dials": 121, "connected": 26, "rate": 21.5}, {"week": "2025-08-25", "dials": 80, "connected": 21, "rate": 26.2}, {"week": "2025-09-01", "dials": 56, "connected": 17, "rate": 30.4}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Tyrese": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 3, "connected": 3, "rate": 100.0}, {"week": "2025-09-22", "dials": 6, "connected": 1, "rate": 16.7}, {"week": "2025-09-29", "dials": 40, "connected": 18, "rate": 45.0}, {"week": "2025-10-06", "dials": 107, "connected": 26, "rate": 24.3}, {"week": "2025-10-13", "dials": 118, "connected": 35, "rate": 29.7}, {"week": "2025-10-20", "dials": 80, "connected": 17, "rate": 21.2}, {"week": "2025-10-27", "dials": 64, "connected": 24, "rate": 37.5}, {"week": "2025-11-03", "dials": 86, "connected": 30, "rate": 34.9}, {"week": "2025-11-10", "dials": 116, "connected": 41, "rate": 35.3}, {"week": "2025-11-17", "dials": 137, "connected": 40, "rate": 29.2}, {"week": "2025-11-24", "dials": 114, "connected": 32, "rate": 28.1}, {"week": "2025-12-01", "dials": 71, "connected": 7, "rate": 9.9}, {"week": "2025-12-08", "dials": 110, "connected": 33, "rate": 30.0}, {"week": "2025-12-15", "dials": 57, "connected": 13, "rate": 22.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 72, "connected": 15, "rate": 20.8}, {"week": "2026-01-12", "dials": 12, "connected": 6, "rate": 50.0}, {"week": "2026-01-19", "dials": 42, "connected": 11, "rate": 26.2}, {"week": "2026-01-26", "dials": 185, "connected": 60, "rate": 32.4}, {"week": "2026-02-02", "dials": 153, "connected": 45, "rate": 29.4}, {"week": "2026-02-09", "dials": 200, "connected": 39, "rate": 19.5}, {"week": "2026-02-16", "dials": 98, "connected": 18, "rate": 18.4}, {"week": "2026-02-23", "dials": 75, "connected": 22, "rate": 29.3}, {"week": "2026-03-02", "dials": 137, "connected": 35, "rate": 25.5}, {"week": "2026-03-09", "dials": 102, "connected": 23, "rate": 22.5}, {"week": "2026-03-16", "dials": 82, "connected": 20, "rate": 24.4}, {"week": "2026-03-23", "dials": 48, "connected": 7, "rate": 14.6}], "James": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 16, "connected": 4, "rate": 25.0}, {"week": "2025-02-17", "dials": 11, "connected": 2, "rate": 18.2}, {"week": "2025-02-24", "dials": 16, "connected": 3, "rate": 18.8}, {"week": "2025-03-03", "dials": 64, "connected": 18, "rate": 28.1}, {"week": "2025-03-10", "dials": 53, "connected": 10, "rate": 18.9}, {"week": "2025-03-17", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-03-31", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-04-07", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-04-14", "dials": 19, "connected": 6, "rate": 31.6}, {"week": "2025-04-21", "dials": 103, "connected": 11, "rate": 10.7}, {"week": "2025-04-28", "dials": 96, "connected": 13, "rate": 13.5}, {"week": "2025-05-05", "dials": 91, "connected": 11, "rate": 12.1}, {"week": "2025-05-12", "dials": 52, "connected": 3, "rate": 5.8}, {"week": "2025-05-19", "dials": 90, "connected": 15, "rate": 16.7}, {"week": "2025-05-26", "dials": 57, "connected": 4, "rate": 7.0}, {"week": "2025-06-02", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-06-09", "dials": 32, "connected": 4, "rate": 12.5}, {"week": "2025-06-16", "dials": 54, "connected": 1, "rate": 1.9}, {"week": "2025-06-23", "dials": 58, "connected": 8, "rate": 13.8}, {"week": "2025-06-30", "dials": 43, "connected": 10, "rate": 23.3}, {"week": "2025-07-07", "dials": 18, "connected": 4, "rate": 22.2}, {"week": "2025-07-14", "dials": 11, "connected": 0, "rate": 0.0}, {"week": "2025-07-21", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 10, "connected": 2, "rate": 20.0}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-10-13", "dials": 4, "connected": 0, "rate": 0.0}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 5, "connected": 1, "rate": 20.0}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 3, "connected": 1, "rate": 33.3}, {"week": "2025-12-08", "dials": 6, "connected": 3, "rate": 50.0}, {"week": "2025-12-15", "dials": 37, "connected": 6, "rate": 16.2}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Lina": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 10, "connected": 0, "rate": 0.0}, {"week": "2025-08-04", "dials": 19, "connected": 2, "rate": 10.5}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 106, "connected": 6, "rate": 5.7}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 31, "connected": 3, "rate": 9.7}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 17, "connected": 4, "rate": 23.5}, {"week": "2025-09-29", "dials": 9, "connected": 2, "rate": 22.2}, {"week": "2025-10-06", "dials": 17, "connected": 2, "rate": 11.8}, {"week": "2025-10-13", "dials": 27, "connected": 5, "rate": 18.5}, {"week": "2025-10-20", "dials": 60, "connected": 7, "rate": 11.7}, {"week": "2025-10-27", "dials": 24, "connected": 3, "rate": 12.5}, {"week": "2025-11-03", "dials": 51, "connected": 9, "rate": 17.6}, {"week": "2025-11-10", "dials": 47, "connected": 5, "rate": 10.6}, {"week": "2025-11-17", "dials": 60, "connected": 6, "rate": 10.0}, {"week": "2025-11-24", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-12-01", "dials": 13, "connected": 1, "rate": 7.7}, {"week": "2025-12-08", "dials": 77, "connected": 10, "rate": 13.0}, {"week": "2025-12-15", "dials": 17, "connected": 1, "rate": 5.9}, {"week": "2025-12-22", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 37, "connected": 5, "rate": 13.5}, {"week": "2026-01-26", "dials": 50, "connected": 4, "rate": 8.0}, {"week": "2026-02-02", "dials": 70, "connected": 6, "rate": 8.6}, {"week": "2026-02-09", "dials": 111, "connected": 11, "rate": 9.9}, {"week": "2026-02-16", "dials": 141, "connected": 9, "rate": 6.4}, {"week": "2026-02-23", "dials": 133, "connected": 10, "rate": 7.5}, {"week": "2026-03-02", "dials": 99, "connected": 9, "rate": 9.1}, {"week": "2026-03-09", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-16", "dials": 108, "connected": 8, "rate": 7.4}, {"week": "2026-03-23", "dials": 123, "connected": 12, "rate": 9.8}], "Ricky": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-11-17", "dials": 21, "connected": 5, "rate": 23.8}, {"week": "2025-11-24", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-12-01", "dials": 34, "connected": 7, "rate": 20.6}, {"week": "2025-12-08", "dials": 144, "connected": 7, "rate": 4.9}, {"week": "2025-12-15", "dials": 62, "connected": 3, "rate": 4.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 59, "connected": 0, "rate": 0.0}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 27, "connected": 2, "rate": 7.4}, {"week": "2026-01-26", "dials": 70, "connected": 12, "rate": 17.1}, {"week": "2026-02-02", "dials": 76, "connected": 6, "rate": 7.9}, {"week": "2026-02-09", "dials": 97, "connected": 3, "rate": 3.1}, {"week": "2026-02-16", "dials": 134, "connected": 13, "rate": 9.7}, {"week": "2026-02-23", "dials": 69, "connected": 8, "rate": 11.6}, {"week": "2026-03-02", "dials": 114, "connected": 15, "rate": 13.2}, {"week": "2026-03-09", "dials": 123, "connected": 12, "rate": 9.8}, {"week": "2026-03-16", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-23", "dials": 69, "connected": 6, "rate": 8.7}]}};
+
+const SDR_COLORS = {
+  'Emmanuel': '#f1c40f',
+  'Tyrese': '#2ecc71',
+  'James': '#58a6ff',
+  'Lina': '#e879f9',
+  'Ricky': '#ef4444',
+};
+
+const trendVisible = { 'Emmanuel': true, 'Tyrese': true, 'James': true, 'Lina': true, 'Ricky': true };
+
+function renderTrendLegend() {
+  const container = document.getElementById('trend-legend');
+  container.innerHTML = Object.keys(SDR_COLORS).map(sdr => {
+    const color = SDR_COLORS[sdr];
+    const active = trendVisible[sdr];
+    return `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;opacity:${active ? 1 : 0.3};" onclick="toggleTrend('${sdr}')">
+      <div style="width:12px;height:3px;background:${color};border-radius:2px;"></div>
+      <span style="font-size:12px;color:${color};">${sdr}</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleTrend(sdr) {
+  trendVisible[sdr] = !trendVisible[sdr];
+  renderTrendLegend();
+  renderTrendChart();
+}
+
+function renderTrendChart() {
+  const canvas = document.getElementById('trend-chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const weeks = TREND.weeks;
+  // Only show weeks where at least one visible SDR has data
+  const activeWeeks = weeks.filter((w, i) => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+  const activeIndices = weeks.map((w, i) => i).filter(i => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+
+  if (activeIndices.length === 0) return;
+
+  const padL = 50, padR = 20, padT = 20, padB = 50;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // Y axis: 0-50%
+  const maxY = 50;
+
+  // Grid
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  ctx.font = '11px -apple-system, sans-serif';
+  ctx.fillStyle = '#8b949e';
+  ctx.textAlign = 'right';
+  for (let y = 0; y <= maxY; y += 10) {
+    const py = padT + chartH - (y / maxY * chartH);
+    ctx.beginPath();
+    ctx.moveTo(padL, py);
+    ctx.lineTo(padL + chartW, py);
+    ctx.stroke();
+    ctx.fillText(y + '%', padL - 8, py + 4);
+  }
+
+  // X axis labels (show every ~4th week)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8b949e';
+  const step = Math.max(1, Math.floor(activeIndices.length / 12));
+  activeIndices.forEach((wi, xi) => {
+    if (xi % step === 0 || xi === activeIndices.length - 1) {
+      const px = padL + (xi / (activeIndices.length - 1)) * chartW;
+      const label = weeks[wi].substring(5); // MM-DD
+      ctx.fillText(label, px, H - padB + 20);
+    }
+  });
+
+  // Store point positions for hover
+  canvas._points = [];
+
+  // Draw lines
+  Object.keys(SDR_COLORS).forEach(sdr => {
+    if (!trendVisible[sdr]) return;
+    const color = SDR_COLORS[sdr];
+    const data = TREND.sdrs[sdr];
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let started = false;
+
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else ctx.lineTo(px, py);
+      canvas._points.push({ x: px, y: py, sdr, week: weeks[wi], rate: d.rate, dials: d.dials, connected: d.connected });
+    });
+    ctx.stroke();
+
+    // Dots
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  });
+}
+
+// Tooltip on hover
+document.getElementById('trend-chart').addEventListener('mousemove', (e) => {
+  const canvas = e.target;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const points = canvas._points || [];
+  let closest = null;
+  let minDist = 20;
+  points.forEach(p => {
+    const dist = Math.sqrt((p.x - mx) ** 2 + (p.y - my) ** 2);
+    if (dist < minDist) { minDist = dist; closest = p; }
+  });
+  const tip = document.getElementById('trend-tooltip');
+  if (closest) {
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 12) + 'px';
+    tip.style.top = (e.clientY - 10) + 'px';
+    tip.innerHTML = `<span style="color:${SDR_COLORS[closest.sdr]};font-weight:600;">${closest.sdr}</span><br>
+      Week of ${closest.week}<br>
+      ${closest.rate}% (${closest.connected}/${closest.dials} dials)`;
+  } else {
+    tip.style.display = 'none';
+  }
+});
+
+document.getElementById('trend-chart').addEventListener('mouseleave', () => {
+  document.getElementById('trend-tooltip').style.display = 'none';
+});
+
+renderTrendLegend();
+renderTrendChart();
+window.addEventListener('resize', renderTrendChart);
+
+});
+
+render();
+
+const TREND = {"weeks": ["2025-01-27", "2025-02-03", "2025-02-10", "2025-02-17", "2025-02-24", "2025-03-03", "2025-03-10", "2025-03-17", "2025-03-31", "2025-04-07", "2025-04-14", "2025-04-21", "2025-04-28", "2025-05-05", "2025-05-12", "2025-05-19", "2025-05-26", "2025-06-02", "2025-06-09", "2025-06-16", "2025-06-23", "2025-06-30", "2025-07-07", "2025-07-14", "2025-07-21", "2025-07-28", "2025-08-04", "2025-08-11", "2025-08-18", "2025-08-25", "2025-09-01", "2025-09-08", "2025-09-15", "2025-09-22", "2025-09-29", "2025-10-06", "2025-10-13", "2025-10-20", "2025-10-27", "2025-11-03", "2025-11-10", "2025-11-17", "2025-11-24", "2025-12-01", "2025-12-08", "2025-12-15", "2025-12-22", "2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02", "2026-02-09", "2026-02-16", "2026-02-23", "2026-03-02", "2026-03-09", "2026-03-16", "2026-03-23"], "sdrs": {"Emmanuel": [{"week": "2025-01-27", "dials": 118, "connected": 14, "rate": 11.9}, {"week": "2025-02-03", "dials": 82, "connected": 14, "rate": 17.1}, {"week": "2025-02-10", "dials": 16, "connected": 6, "rate": 37.5}, {"week": "2025-02-17", "dials": 71, "connected": 8, "rate": 11.3}, {"week": "2025-02-24", "dials": 149, "connected": 25, "rate": 16.8}, {"week": "2025-03-03", "dials": 38, "connected": 17, "rate": 44.7}, {"week": "2025-03-10", "dials": 146, "connected": 26, "rate": 17.8}, {"week": "2025-03-17", "dials": 10, "connected": 1, "rate": 10.0}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 112, "connected": 9, "rate": 8.0}, {"week": "2025-04-14", "dials": 152, "connected": 15, "rate": 9.9}, {"week": "2025-04-21", "dials": 103, "connected": 12, "rate": 11.7}, {"week": "2025-04-28", "dials": 5, "connected": 0, "rate": 0.0}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 173, "connected": 8, "rate": 4.6}, {"week": "2025-05-19", "dials": 122, "connected": 14, "rate": 11.5}, {"week": "2025-05-26", "dials": 76, "connected": 12, "rate": 15.8}, {"week": "2025-06-02", "dials": 105, "connected": 9, "rate": 8.6}, {"week": "2025-06-09", "dials": 228, "connected": 32, "rate": 14.0}, {"week": "2025-06-16", "dials": 51, "connected": 4, "rate": 7.8}, {"week": "2025-06-23", "dials": 87, "connected": 14, "rate": 16.1}, {"week": "2025-06-30", "dials": 64, "connected": 7, "rate": 10.9}, {"week": "2025-07-07", "dials": 44, "connected": 5, "rate": 11.4}, {"week": "2025-07-14", "dials": 75, "connected": 9, "rate": 12.0}, {"week": "2025-07-21", "dials": 148, "connected": 12, "rate": 8.1}, {"week": "2025-07-28", "dials": 93, "connected": 16, "rate": 17.2}, {"week": "2025-08-04", "dials": 24, "connected": 10, "rate": 41.7}, {"week": "2025-08-11", "dials": 163, "connected": 23, "rate": 14.1}, {"week": "2025-08-18", "dials": 121, "connected": 26, "rate": 21.5}, {"week": "2025-08-25", "dials": 80, "connected": 21, "rate": 26.2}, {"week": "2025-09-01", "dials": 56, "connected": 17, "rate": 30.4}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Tyrese": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 3, "connected": 3, "rate": 100.0}, {"week": "2025-09-22", "dials": 6, "connected": 1, "rate": 16.7}, {"week": "2025-09-29", "dials": 40, "connected": 18, "rate": 45.0}, {"week": "2025-10-06", "dials": 107, "connected": 26, "rate": 24.3}, {"week": "2025-10-13", "dials": 118, "connected": 35, "rate": 29.7}, {"week": "2025-10-20", "dials": 80, "connected": 17, "rate": 21.2}, {"week": "2025-10-27", "dials": 64, "connected": 24, "rate": 37.5}, {"week": "2025-11-03", "dials": 86, "connected": 30, "rate": 34.9}, {"week": "2025-11-10", "dials": 116, "connected": 41, "rate": 35.3}, {"week": "2025-11-17", "dials": 137, "connected": 40, "rate": 29.2}, {"week": "2025-11-24", "dials": 114, "connected": 32, "rate": 28.1}, {"week": "2025-12-01", "dials": 71, "connected": 7, "rate": 9.9}, {"week": "2025-12-08", "dials": 110, "connected": 33, "rate": 30.0}, {"week": "2025-12-15", "dials": 57, "connected": 13, "rate": 22.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 72, "connected": 15, "rate": 20.8}, {"week": "2026-01-12", "dials": 12, "connected": 6, "rate": 50.0}, {"week": "2026-01-19", "dials": 42, "connected": 11, "rate": 26.2}, {"week": "2026-01-26", "dials": 185, "connected": 60, "rate": 32.4}, {"week": "2026-02-02", "dials": 153, "connected": 45, "rate": 29.4}, {"week": "2026-02-09", "dials": 200, "connected": 39, "rate": 19.5}, {"week": "2026-02-16", "dials": 98, "connected": 18, "rate": 18.4}, {"week": "2026-02-23", "dials": 75, "connected": 22, "rate": 29.3}, {"week": "2026-03-02", "dials": 137, "connected": 35, "rate": 25.5}, {"week": "2026-03-09", "dials": 102, "connected": 23, "rate": 22.5}, {"week": "2026-03-16", "dials": 82, "connected": 20, "rate": 24.4}, {"week": "2026-03-23", "dials": 48, "connected": 7, "rate": 14.6}], "James": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 16, "connected": 4, "rate": 25.0}, {"week": "2025-02-17", "dials": 11, "connected": 2, "rate": 18.2}, {"week": "2025-02-24", "dials": 16, "connected": 3, "rate": 18.8}, {"week": "2025-03-03", "dials": 64, "connected": 18, "rate": 28.1}, {"week": "2025-03-10", "dials": 53, "connected": 10, "rate": 18.9}, {"week": "2025-03-17", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-03-31", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-04-07", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-04-14", "dials": 19, "connected": 6, "rate": 31.6}, {"week": "2025-04-21", "dials": 103, "connected": 11, "rate": 10.7}, {"week": "2025-04-28", "dials": 96, "connected": 13, "rate": 13.5}, {"week": "2025-05-05", "dials": 91, "connected": 11, "rate": 12.1}, {"week": "2025-05-12", "dials": 52, "connected": 3, "rate": 5.8}, {"week": "2025-05-19", "dials": 90, "connected": 15, "rate": 16.7}, {"week": "2025-05-26", "dials": 57, "connected": 4, "rate": 7.0}, {"week": "2025-06-02", "dials": 18, "connected": 1, "rate": 5.6}, {"week": "2025-06-09", "dials": 32, "connected": 4, "rate": 12.5}, {"week": "2025-06-16", "dials": 54, "connected": 1, "rate": 1.9}, {"week": "2025-06-23", "dials": 58, "connected": 8, "rate": 13.8}, {"week": "2025-06-30", "dials": 43, "connected": 10, "rate": 23.3}, {"week": "2025-07-07", "dials": 18, "connected": 4, "rate": 22.2}, {"week": "2025-07-14", "dials": 11, "connected": 0, "rate": 0.0}, {"week": "2025-07-21", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 10, "connected": 2, "rate": 20.0}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-10-13", "dials": 4, "connected": 0, "rate": 0.0}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-17", "dials": 5, "connected": 1, "rate": 20.0}, {"week": "2025-11-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-12-01", "dials": 3, "connected": 1, "rate": 33.3}, {"week": "2025-12-08", "dials": 6, "connected": 3, "rate": 50.0}, {"week": "2025-12-15", "dials": 37, "connected": 6, "rate": 16.2}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-02-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-03-23", "dials": 0, "connected": 0, "rate": null}], "Lina": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 10, "connected": 0, "rate": 0.0}, {"week": "2025-08-04", "dials": 19, "connected": 2, "rate": 10.5}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 106, "connected": 6, "rate": 5.7}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 31, "connected": 3, "rate": 9.7}, {"week": "2025-09-15", "dials": 14, "connected": 1, "rate": 7.1}, {"week": "2025-09-22", "dials": 17, "connected": 4, "rate": 23.5}, {"week": "2025-09-29", "dials": 9, "connected": 2, "rate": 22.2}, {"week": "2025-10-06", "dials": 17, "connected": 2, "rate": 11.8}, {"week": "2025-10-13", "dials": 27, "connected": 5, "rate": 18.5}, {"week": "2025-10-20", "dials": 60, "connected": 7, "rate": 11.7}, {"week": "2025-10-27", "dials": 24, "connected": 3, "rate": 12.5}, {"week": "2025-11-03", "dials": 51, "connected": 9, "rate": 17.6}, {"week": "2025-11-10", "dials": 47, "connected": 5, "rate": 10.6}, {"week": "2025-11-17", "dials": 60, "connected": 6, "rate": 10.0}, {"week": "2025-11-24", "dials": 2, "connected": 0, "rate": 0.0}, {"week": "2025-12-01", "dials": 13, "connected": 1, "rate": 7.7}, {"week": "2025-12-08", "dials": 77, "connected": 10, "rate": 13.0}, {"week": "2025-12-15", "dials": 17, "connected": 1, "rate": 5.9}, {"week": "2025-12-22", "dials": 1, "connected": 0, "rate": 0.0}, {"week": "2026-01-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 37, "connected": 5, "rate": 13.5}, {"week": "2026-01-26", "dials": 50, "connected": 4, "rate": 8.0}, {"week": "2026-02-02", "dials": 70, "connected": 6, "rate": 8.6}, {"week": "2026-02-09", "dials": 111, "connected": 11, "rate": 9.9}, {"week": "2026-02-16", "dials": 141, "connected": 9, "rate": 6.4}, {"week": "2026-02-23", "dials": 133, "connected": 10, "rate": 7.5}, {"week": "2026-03-02", "dials": 99, "connected": 9, "rate": 9.1}, {"week": "2026-03-09", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-16", "dials": 108, "connected": 8, "rate": 7.4}, {"week": "2026-03-23", "dials": 123, "connected": 12, "rate": 9.8}], "Ricky": [{"week": "2025-01-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-02-24", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-10", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-17", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-03-31", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-04-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-05", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-19", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-05-26", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-02", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-09", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-16", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-23", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-06-30", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-07", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-14", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-21", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-07-28", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-04", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-11", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-18", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-08-25", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-01", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-08", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-15", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-09-29", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-06", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-13", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-20", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-10-27", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-03", "dials": 0, "connected": 0, "rate": null}, {"week": "2025-11-10", "dials": 28, "connected": 4, "rate": 14.3}, {"week": "2025-11-17", "dials": 21, "connected": 5, "rate": 23.8}, {"week": "2025-11-24", "dials": 2, "connected": 1, "rate": 50.0}, {"week": "2025-12-01", "dials": 34, "connected": 7, "rate": 20.6}, {"week": "2025-12-08", "dials": 144, "connected": 7, "rate": 4.9}, {"week": "2025-12-15", "dials": 62, "connected": 3, "rate": 4.8}, {"week": "2025-12-22", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-05", "dials": 59, "connected": 0, "rate": 0.0}, {"week": "2026-01-12", "dials": 0, "connected": 0, "rate": null}, {"week": "2026-01-19", "dials": 27, "connected": 2, "rate": 7.4}, {"week": "2026-01-26", "dials": 70, "connected": 12, "rate": 17.1}, {"week": "2026-02-02", "dials": 76, "connected": 6, "rate": 7.9}, {"week": "2026-02-09", "dials": 97, "connected": 3, "rate": 3.1}, {"week": "2026-02-16", "dials": 134, "connected": 13, "rate": 9.7}, {"week": "2026-02-23", "dials": 69, "connected": 8, "rate": 11.6}, {"week": "2026-03-02", "dials": 114, "connected": 15, "rate": 13.2}, {"week": "2026-03-09", "dials": 123, "connected": 12, "rate": 9.8}, {"week": "2026-03-16", "dials": 119, "connected": 6, "rate": 5.0}, {"week": "2026-03-23", "dials": 69, "connected": 6, "rate": 8.7}]}};
+
+const SDR_COLORS = {
+  'Emmanuel': '#f1c40f',
+  'Tyrese': '#2ecc71',
+  'James': '#58a6ff',
+  'Lina': '#e879f9',
+  'Ricky': '#ef4444',
+};
+
+const trendVisible = { 'Emmanuel': true, 'Tyrese': true, 'James': true, 'Lina': true, 'Ricky': true };
+
+function renderTrendLegend() {
+  const container = document.getElementById('trend-legend');
+  container.innerHTML = Object.keys(SDR_COLORS).map(sdr => {
+    const color = SDR_COLORS[sdr];
+    const active = trendVisible[sdr];
+    return `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;opacity:${active ? 1 : 0.3};" onclick="toggleTrend('${sdr}')">
+      <div style="width:12px;height:3px;background:${color};border-radius:2px;"></div>
+      <span style="font-size:12px;color:${color};">${sdr}</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleTrend(sdr) {
+  trendVisible[sdr] = !trendVisible[sdr];
+  renderTrendLegend();
+  renderTrendChart();
+}
+
+function renderTrendChart() {
+  const canvas = document.getElementById('trend-chart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const weeks = TREND.weeks;
+  // Only show weeks where at least one visible SDR has data
+  const activeWeeks = weeks.filter((w, i) => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+  const activeIndices = weeks.map((w, i) => i).filter(i => {
+    return Object.keys(SDR_COLORS).some(sdr => {
+      const d = TREND.sdrs[sdr][i];
+      return trendVisible[sdr] && d && d.rate !== null;
+    });
+  });
+
+  if (activeIndices.length === 0) return;
+
+  const padL = 50, padR = 20, padT = 20, padB = 50;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // Y axis: 0-50%
+  const maxY = 50;
+
+  // Grid
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  ctx.font = '11px -apple-system, sans-serif';
+  ctx.fillStyle = '#8b949e';
+  ctx.textAlign = 'right';
+  for (let y = 0; y <= maxY; y += 10) {
+    const py = padT + chartH - (y / maxY * chartH);
+    ctx.beginPath();
+    ctx.moveTo(padL, py);
+    ctx.lineTo(padL + chartW, py);
+    ctx.stroke();
+    ctx.fillText(y + '%', padL - 8, py + 4);
+  }
+
+  // X axis labels (show every ~4th week)
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8b949e';
+  const step = Math.max(1, Math.floor(activeIndices.length / 12));
+  activeIndices.forEach((wi, xi) => {
+    if (xi % step === 0 || xi === activeIndices.length - 1) {
+      const px = padL + (xi / (activeIndices.length - 1)) * chartW;
+      const label = weeks[wi].substring(5); // MM-DD
+      ctx.fillText(label, px, H - padB + 20);
+    }
+  });
+
+  // Store point positions for hover
+  canvas._points = [];
+
+  // Draw lines
+  Object.keys(SDR_COLORS).forEach(sdr => {
+    if (!trendVisible[sdr]) return;
+    const color = SDR_COLORS[sdr];
+    const data = TREND.sdrs[sdr];
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    let started = false;
+
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else ctx.lineTo(px, py);
+      canvas._points.push({ x: px, y: py, sdr, week: weeks[wi], rate: d.rate, dials: d.dials, connected: d.connected });
+    });
+    ctx.stroke();
+
+    // Dots
+    activeIndices.forEach((wi, xi) => {
+      const d = data[wi];
+      if (!d || d.rate === null) return;
+      const px = padL + (xi / Math.max(activeIndices.length - 1, 1)) * chartW;
+      const py = padT + chartH - (d.rate / maxY * chartH);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  });
+}
+
+// Tooltip on hover
+document.getElementById('trend-chart').addEventListener('mousemove', (e) => {
+  const canvas = e.target;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const points = canvas._points || [];
+  let closest = null;
+  let minDist = 20;
+  points.forEach(p => {
+    const dist = Math.sqrt((p.x - mx) ** 2 + (p.y - my) ** 2);
+    if (dist < minDist) { minDist = dist; closest = p; }
+  });
+  const tip = document.getElementById('trend-tooltip');
+  if (closest) {
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 12) + 'px';
+    tip.style.top = (e.clientY - 10) + 'px';
+    tip.innerHTML = `<span style="color:${SDR_COLORS[closest.sdr]};font-weight:600;">${closest.sdr}</span><br>
+      Week of ${closest.week}<br>
+      ${closest.rate}% (${closest.connected}/${closest.dials} dials)`;
+  } else {
+    tip.style.display = 'none';
+  }
+});
+
+document.getElementById('trend-chart').addEventListener('mouseleave', () => {
+  document.getElementById('trend-tooltip').style.display = 'none';
+});
+
+renderTrendLegend();
+renderTrendChart();
+window.addEventListener('resize', renderTrendChart);
+
+</script>
+</body>
+</html>
